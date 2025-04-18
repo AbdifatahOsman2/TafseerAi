@@ -26,6 +26,10 @@ const SurahDetailScreen = ({ route, navigation }) => {
   const [loading, setLoading] = useState(true);
   const isFocused = useIsFocused();
   const [selectedAyah, setSelectedAyah] = useState(null);
+  const [showBismillah, setShowBismillah] = useState(true);
+
+  // Define Bismillah text for display purposes
+  const BISMILLAH = "بِسۡمِ ٱللَّهِ ٱلرَّحۡمَـٰنِ ٱلرَّحِیمِ";
 
   useEffect(() => {
     fetchSurahContent(surahNumber);
@@ -44,8 +48,95 @@ const SurahDetailScreen = ({ route, navigation }) => {
       const translationData = await translationResponse.json();
       
       if (arabicData.code === 200 && translationData.code === 200) {
-        setSurahContent(arabicData.data);
-        setTranslations(translationData.data);
+        // Special case for Surah numbers
+        const shouldDisplayBismillah = number !== 1 && number !== 9;
+        
+        // Process the data to handle Bismillah correctly
+        let processedArabicData = { ...arabicData.data };
+        let processedTranslationData = { ...translationData.data };
+        
+        // Don't modify Al-Fatiha or At-Tawbah
+        if (number !== 1 && number !== 9 && processedArabicData.ayahs && processedArabicData.ayahs.length > 0) {
+          console.log("====== Processing Surah", number, "======");
+          
+          // First, print the original text for debugging
+          const firstAyah = processedArabicData.ayahs[0];
+          
+          // Get the first ayah text
+          let ayahText = firstAyah.text;
+          
+          // Store common Arabic starting words for various surahs
+          const startPatterns = {
+            114: "قُلۡ", // An-Naas starts with "Qul"
+            113: "قُلۡ", // Al-Falaq starts with "Qul"
+            112: "قُلۡ", // Al-Ikhlas starts with "Qul"
+            109: "قُلۡ", // Al-Kafirun starts with "Qul"
+            108: "إِنَّآ", // Al-Kawthar starts with "Inna"
+            107: "أَرَءَیۡتَ", // Al-Ma'un starts with "Ara'ayta"
+            106: "لِإِیلَـٰفِ", // Quraysh starts with "Li'ilafi"
+            105: "أَلَمۡ", // Al-Fil starts with "Alam"
+            104: "وَیۡلࣱ", // Al-Humazah starts with "Waylun"
+            103: "وَٱلۡعَصۡرِ", // Al-Asr starts with "Wal-asr"
+            // Add more patterns for other surahs as needed
+          };
+          
+          // First, try special case for specific surahs that we know the pattern for
+          if (startPatterns[number]) {
+            const startPattern = startPatterns[number];
+            
+            if (ayahText.includes(startPattern)) {
+              const patternIndex = ayahText.indexOf(startPattern);
+              
+              // Only use this if the pattern is found after some initial text (Bismillah)
+              if (patternIndex > 20) {
+                const cleanText = ayahText.substring(patternIndex).trim();
+                processedArabicData.ayahs[0].text = cleanText;
+              }
+            }
+          }
+          // Next, try general pattern-based approach
+          else if (ayahText.startsWith('ب')) {
+            // Find the position after Bismillah by looking for a clear break
+            // Bismillah is typically followed by a space or other character
+            let cutPosition = ayahText.indexOf(' ', 35); // Look for space after around 35-40 chars
+            
+            if (cutPosition === -1) {
+              // If we can't find a space, try another approach - just remove first 40 chars
+              // for surahs where Bismillah is directly followed by the ayah
+              const cleanText = ayahText.substring(40).trim();
+              processedArabicData.ayahs[0].text = cleanText;
+            } else {
+              // We found a good cut position
+              const cleanText = ayahText.substring(cutPosition + 1).trim();
+              processedArabicData.ayahs[0].text = cleanText;
+            }
+          }
+          
+          // Clean the translation too - most translations have "In the Name of Allah..." at start
+          if (processedTranslationData.ayahs && processedTranslationData.ayahs.length > 0) {
+            const transText = processedTranslationData.ayahs[0].text;
+            
+            if (transText.includes("In the Name of Allah") || transText.includes("In the name of Allah")) {
+              // Find the end of the Bismillah phrase by looking for "Merciful"
+              const mercifulPos = transText.indexOf("Merciful");
+              
+              if (mercifulPos !== -1) {
+                // Take text after "Merciful" + some chars for the period
+                const cleanText = transText.substring(mercifulPos + 10).trim();
+                
+                // Capitalize first letter
+                if (cleanText.length > 0) {
+                  const finalText = cleanText.charAt(0).toUpperCase() + cleanText.slice(1);
+                  processedTranslationData.ayahs[0].text = finalText;
+                }
+              }
+            }
+          }
+        }
+        
+        setSurahContent(processedArabicData);
+        setTranslations(processedTranslationData);
+        setShowBismillah(shouldDisplayBismillah);
       } else {
         console.error('Error fetching surah content:', arabicData, translationData);
       }
@@ -58,7 +149,6 @@ const SurahDetailScreen = ({ route, navigation }) => {
 
   const handlePress = (ayah) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    console.log("Press detected for ayah:", ayah.numberInSurah);
     setSelectedAyah(ayah);
   };
 
@@ -71,14 +161,12 @@ const SurahDetailScreen = ({ route, navigation }) => {
     // Add logic to navigate to AI Tafseer screen or show AI Tafseer
     closeMenu();
     // Navigation logic would go here
-    console.log("AI Tafseer for ayah:", ayah.numberInSurah);
   };
 
   const handleBookmark = (ayah) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     // Add logic to bookmark the ayah
     closeMenu();
-    console.log("Bookmarked ayah:", ayah.numberInSurah);
   };
 
   if (loading) {
@@ -128,6 +216,15 @@ const SurahDetailScreen = ({ route, navigation }) => {
         </View>
         
         <View style={[styles.divider, { backgroundColor: theme.BORDER }]} />
+        
+        {/* Bismillah header for all surahs except Surah 1 (Al-Fatiha) and Surah 9 (At-Tawbah) */}
+        {showBismillah && (
+          <View style={styles.bismillahContainer}>
+            <Text style={[styles.bismillahText, { color: theme.TEXT_PRIMARY }]}>
+              {BISMILLAH}
+            </Text>
+          </View>
+        )}
         
         {surahContent.ayahs.map((ayah) => {
           // Find matching translation by numberInSurah
@@ -394,6 +491,20 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 16,
     fontFamily: 'IBMPlexSans_500Medium',
+  },
+  bismillahContainer: {
+    padding: 16,
+    marginBottom: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  bismillahText: {
+    fontSize: 30,
+    lineHeight: 55,
+    fontFamily: 'IBMPlexSans_500Medium',
+    textAlign: 'center',
+    paddingVertical: 5,
   },
 });
 
