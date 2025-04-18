@@ -12,14 +12,11 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import { createStackNavigator } from '@react-navigation/stack';
-import SurahDetailScreen from './SurahDetailScreen';
+import { useIsFocused } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
-const Stack = createStackNavigator();
 
-// Surah List Component
-const SurahListScreen = ({ navigation }) => {
+const ExploreScreen = ({ navigation }) => {
   const { theme } = useTheme();
   const [surahs, setSurahs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -87,6 +84,8 @@ const SurahListScreen = ({ navigation }) => {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.BACKGROUND }]}>
       <StatusBar barStyle={theme.DARK ? "light-content" : "dark-content"} />
+      
+      <Text style={[styles.screenTitle, { color: theme.TEXT_PRIMARY }]}>Explore Quran</Text>
 
       <FlatList
         data={surahs}
@@ -94,32 +93,8 @@ const SurahListScreen = ({ navigation }) => {
         keyExtractor={(item) => item.number.toString()}
         contentContainerStyle={[styles.surahList, { paddingBottom: 80 }]}
         showsVerticalScrollIndicator={false}
-        ListHeaderComponent={() => (
-          <Text style={[styles.screenTitle, { color: theme.TEXT_PRIMARY }]}>Explore Quran</Text>
-        )}
       />
     </SafeAreaView>
-  );
-};
-
-// Main Navigator Component
-const ExploreScreen = () => {
-  return (
-    <Stack.Navigator 
-      screenOptions={{ 
-        headerShown: false,
-        animationEnabled: true,
-      }}
-    >
-      <Stack.Screen name="SurahList" component={SurahListScreen} />
-      <Stack.Screen 
-        name="SurahDetail" 
-        component={SurahDetailScreen}
-        options={{
-          tabBarVisible: false
-        }}
-      />
-    </Stack.Navigator>
   );
 };
 

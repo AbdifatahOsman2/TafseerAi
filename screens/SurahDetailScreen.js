@@ -27,44 +27,6 @@ const SurahDetailScreen = ({ route, navigation }) => {
   const isFocused = useIsFocused();
   const [selectedAyah, setSelectedAyah] = useState(null);
 
-  // Hide bottom tab bar when screen is focused
-  useEffect(() => {
-    const parent = navigation.getParent();
-    if (parent) {
-      parent.setOptions({
-        tabBarStyle: { display: 'none' }
-      });
-    }
-    
-    return () => {
-      if (parent) {
-        parent.setOptions({
-          tabBarStyle: {
-            backgroundColor: theme.SURFACE,
-            borderTopWidth: 0,
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: 65,
-            paddingBottom: 5,
-            paddingTop: 0,
-            shadowColor: theme.SHADOW,
-            shadowOffset: {
-              width: 0,
-              height: -2,
-            },
-            shadowOpacity: 0.1,
-            shadowRadius: 3,
-            elevation: 10,
-            borderWidth: 0,
-            display: 'flex',
-          }
-        });
-      }
-    };
-  }, [isFocused, navigation, theme]);
-
   useEffect(() => {
     fetchSurahContent(surahNumber);
   }, [surahNumber]);
@@ -210,10 +172,12 @@ const SurahDetailScreen = ({ route, navigation }) => {
 
       {/* Bottom Action Sheet Modal */}
       <Modal
-        animationType="slide"
+        animationType="fade"
         transparent={true}
         visible={selectedAyah !== null}
         onRequestClose={closeMenu}
+        statusBarTranslucent={true}
+        hardwareAccelerated={true}
       >
         <TouchableOpacity
           style={styles.modalOverlay}
@@ -401,6 +365,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 5,
     elevation: 10,
+    transform: [{ translateY: 0 }],
   },
   actionSheetHeader: {
     alignItems: 'center',
