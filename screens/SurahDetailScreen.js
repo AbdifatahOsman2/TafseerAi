@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -15,6 +15,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useIsFocused } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
+import { Audio } from 'expo-av';
 
 const { width, height } = Dimensions.get('window');
 
@@ -27,12 +28,37 @@ const SurahDetailScreen = ({ route, navigation }) => {
   const isFocused = useIsFocused();
   const [selectedAyah, setSelectedAyah] = useState(null);
   const [showBismillah, setShowBismillah] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const soundRef = useRef(null);
+  const [isSurahPlaying, setIsSurahPlaying] = useState(false);
+  const [isSurahLoading, setIsSurahLoading] = useState(false);
+  const surahSoundRef = useRef(null);
 
   // Define Bismillah text for display purposes
   const BISMILLAH = "بِسۡمِ ٱللَّهِ ٱلرَّحۡمَـٰنِ ٱلرَّحِیمِ";
 
   useEffect(() => {
     fetchSurahContent(surahNumber);
+    
+    // Initialize audio
+    Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      staysActiveInBackground: true,
+      playsInSilentModeIOS: true,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+    });
+    
+    // Cleanup function to unload sound when component unmounts
+    return () => {
+      if (soundRef.current) {
+        soundRef.current.unloadAsync();
+      }
+      if (surahSoundRef.current) {
+        surahSoundRef.current.unloadAsync();
+      }
+    };
   }, [surahNumber]);
 
   const fetchSurahContent = async (number) => {
@@ -147,12 +173,160 @@ const SurahDetailScreen = ({ route, navigation }) => {
     }
   };
 
+  // Function to play ayah audio
+  const playAyahAudio = async (ayah) => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setIsLoading(true);
+      
+      // Stop surah audio if playing
+      if (surahSoundRef.current) {
+        await surahSoundRef.current.unloadAsync();
+        setIsSurahPlaying(false);
+      }
+      
+      // Unload any existing ayah sound
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync();
+      }
+      
+      // Get the audio URL for the ayah
+      const responseUrl = `https://api.alquran.cloud/v1/ayah/${ayah.number}/ar.alafasy`;
+      const response = await fetch(responseUrl);
+      const data = await response.json();
+      
+      if (data.code === 200 && data.data && data.data.audio) {
+        // Get the direct audio URL
+        const audioUrl = data.data.audio;
+        
+        // Create a new sound object
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: audioUrl },
+          { shouldPlay: true }
+        );
+        
+        soundRef.current = sound;
+        setIsPlaying(true);
+        
+        // When playback finishes
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (status.didJustFinish) {
+            setIsPlaying(false);
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error playing ayah audio:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Function to stop playing
+  const stopAyahAudio = async () => {
+    if (soundRef.current) {
+      await soundRef.current.stopAsync();
+      setIsPlaying(false);
+    }
+  };
+
+  // Function to play entire surah audio
+  const playSurahAudio = async () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setIsSurahLoading(true);
+      
+      // Stop ayah audio if playing
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync();
+        setIsPlaying(false);
+      }
+      
+      // Unload any existing surah sound
+      if (surahSoundRef.current) {
+        await surahSoundRef.current.unloadAsync();
+      }
+      
+      // For Al-Afasy recitation, we can directly use a known URL pattern
+      // Format is: https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy/{surah_number}.mp3
+      const fullSurahUrl = `https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy/${surahNumber}.mp3`;
+      
+      console.log('Playing surah from URL:', fullSurahUrl);
+      
+      try {
+        // Create a new sound object
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: fullSurahUrl },
+          { shouldPlay: true },
+          (status) => {
+            if (status.error) {
+              console.error('Error loading surah audio:', status.error);
+              setIsSurahPlaying(false);
+            }
+          }
+        );
+        
+        surahSoundRef.current = sound;
+        setIsSurahPlaying(true);
+        
+        // When playback finishes or encounters an error
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (status.didJustFinish || status.error) {
+            setIsSurahPlaying(false);
+          }
+        });
+      } catch (soundError) {
+        console.error('Failed to load sound:', soundError);
+        setIsSurahPlaying(false);
+        
+        // Try fallback URL if first attempt fails
+        try {
+          const fallbackUrl = `https://cdn.alquran.cloud/media/audio/ayah/ar.alafasy/${surahNumber}/1`;
+          console.log('Trying fallback URL:', fallbackUrl);
+          
+          const { sound } = await Audio.Sound.createAsync(
+            { uri: fallbackUrl },
+            { shouldPlay: true }
+          );
+          
+          surahSoundRef.current = sound;
+          setIsSurahPlaying(true);
+          
+          sound.setOnPlaybackStatusUpdate((status) => {
+            if (status.didJustFinish || status.error) {
+              setIsSurahPlaying(false);
+            }
+          });
+        } catch (fallbackError) {
+          console.error('Fallback audio also failed:', fallbackError);
+        }
+      }
+    } catch (error) {
+      console.error('Error playing surah audio:', error);
+      setIsSurahPlaying(false);
+    } finally {
+      setIsSurahLoading(false);
+    }
+  };
+
+  // Function to stop surah audio
+  const stopSurahAudio = async () => {
+    if (surahSoundRef.current) {
+      await surahSoundRef.current.stopAsync();
+      setIsSurahPlaying(false);
+    }
+  };
+
   const handlePress = (ayah) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedAyah(ayah);
   };
 
   const closeMenu = () => {
+    // Stop any playing audio when closing the menu
+    if (soundRef.current) {
+      stopAyahAudio();
+    }
     setSelectedAyah(null);
   };
 
@@ -201,7 +375,21 @@ const SurahDetailScreen = ({ route, navigation }) => {
             {surahContent.englishName}
           </Text>
         </View>
-        <View style={{ width: 32 }} />
+        <TouchableOpacity 
+          style={styles.playButton}
+          onPress={() => isSurahPlaying ? stopSurahAudio() : playSurahAudio()}
+          disabled={isSurahLoading}
+        >
+          {isSurahLoading ? (
+            <ActivityIndicator size="small" color={theme.PRIMARY} />
+          ) : (
+            <MaterialCommunityIcons 
+              name={isSurahPlaying ? "pause-circle" : "play-circle"} 
+              size={28} 
+              color={theme.PRIMARY} 
+            />
+          )}
+        </TouchableOpacity>
       </View>
 
       <ScrollView 
@@ -301,6 +489,26 @@ const SurahDetailScreen = ({ route, navigation }) => {
                         AI Tafseer
                       </Text>
                     </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={() => isPlaying ? stopAyahAudio() : playAyahAudio(selectedAyah)}
+                      disabled={isLoading}
+                    >
+                      {isLoading ? (
+                        <ActivityIndicator size="small" color={theme.PRIMARY} />
+                      ) : (
+                        <MaterialCommunityIcons 
+                          name={isPlaying ? "pause-circle" : "play-circle"} 
+                          size={28} 
+                          color={theme.PRIMARY} 
+                        />
+                      )}
+                      <Text style={[styles.actionButtonText, { color: theme.TEXT_PRIMARY }]}>
+                        {isPlaying ? "Stop" : "Play"}
+                      </Text>
+                    </TouchableOpacity>
+                    
                     <TouchableOpacity
                       style={styles.actionButton}
                       onPress={() => handleBookmark(selectedAyah)}
@@ -505,6 +713,13 @@ const styles = StyleSheet.create({
     fontFamily: 'IBMPlexSans_500Medium',
     textAlign: 'center',
     paddingVertical: 5,
+  },
+  playButton: {
+    padding: 8,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
 
