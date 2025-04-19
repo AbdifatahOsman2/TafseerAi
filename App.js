@@ -17,13 +17,34 @@ import ExploreScreen from './screens/ExploreScreen';
 import TafseerScreen from './screens/TafseerScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import SurahDetailScreen from './screens/SurahDetailScreen';
+import ReciterSettingsScreen from './screens/ReciterSettingsScreen';
+import BookmarksScreen from './screens/BookmarksScreen';
+import LoginScreen from './screens/LoginScreen';
+import RegisterScreen from './screens/RegisterScreen';
+import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
 
 // Import Theme Provider
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+// Import Reciter Provider
+import { ReciterProvider } from './context/ReciterContext';
+// Import User Provider
+import { UserProvider, useUser } from './context/UserContext';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
+const AuthStack = createStackNavigator();
 const { width } = Dimensions.get('window');
+
+// Auth Navigator
+const AuthNavigator = () => {
+  return (
+    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
+      <AuthStack.Screen name="Login" component={LoginScreen} />
+      <AuthStack.Screen name="Register" component={RegisterScreen} />
+      <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+    </AuthStack.Navigator>
+  );
+};
 
 // Create tab screens with stack navigation
 const ExploreStack = () => {
@@ -35,10 +56,31 @@ const ExploreStack = () => {
   );
 };
 
-// Main app component that uses theme
-const MainApp = () => {
+// Add HomeStack with BookmarksScreen
+// Create HomeStack with Bookmarks
+const HomeStack = () => {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="HomeMain" component={HomeScreen} />
+      <Stack.Screen name="Bookmarks" component={BookmarksScreen} />
+      <Stack.Screen name="SurahDetail" component={SurahDetailScreen} />
+    </Stack.Navigator>
+  );
+};
+
+// Profile stack with ReciterSettings
+const ProfileStack = () => {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="ProfileMain" component={ProfileScreen} />
+      <Stack.Screen name="ReciterSettings" component={ReciterSettingsScreen} />
+    </Stack.Navigator>
+  );
+};
+
+// Main tab navigator
+const TabNavigator = () => {
   const { theme, isDarkMode } = useTheme();
-  const [hideTabBar, setHideTabBar] = useState(false);
   
   // Define the default tab bar style to reuse everywhere
   const defaultTabBarStyle = {
@@ -59,101 +101,83 @@ const MainApp = () => {
     borderWidth: 0,
     display: 'flex',
   };
-  
-  // Load IBM Plex Sans font
-  const [fontsLoaded] = useFonts({
-    IBMPlexSans_100Thin,
-    IBMPlexSans_200ExtraLight, 
-    IBMPlexSans_300Light,
-    IBMPlexSans_400Regular,
-    IBMPlexSans_500Medium,
-    IBMPlexSans_600SemiBold,
-    IBMPlexSans_700Bold,
-  });
-
-  // Show loading screen while fonts are loading
-  if (!fontsLoaded) {
-    return (
-      <View style={[styles.loadingContainer, { backgroundColor: theme.BACKGROUND }]}>
-        <Text style={[styles.loadingText, { color: theme.TEXT_PRIMARY }]}>Loading...</Text>
-      </View>
-    );
-  }
 
   return (
-    <NavigationContainer>
-      <StatusBar style={isDarkMode ? "light" : "dark"} />
-      <Tab.Navigator
-        screenOptions={({ route }) => ({
-          headerShown: false,
-          tabBarIcon: ({ focused, color, size }) => {
-            let icon;
-            
-            // More modern icon selection with custom rendering
-            if (route.name === 'Home') {
-              icon = (
-                <View style={styles.iconContainer}>
-                  <MaterialCommunityIcons 
-                    name={focused ? 'home' : 'home-outline'} 
-                    size={30} 
-                    color={color} 
-                  />
-                </View>
-              );
-            } else if (route.name === 'Explore') {
-              icon = (
-                <View style={styles.iconContainer}>
-                  <MaterialCommunityIcons 
-                    name={focused ? 'compass' : 'compass-outline'} 
-                    size={30} 
-                    color={color} 
-                  />
-                </View>
-              );
-            } else if (route.name === 'Tafseer') {
-              icon = (
-                <View style={styles.iconContainer}>
-                  <MaterialCommunityIcons 
-                    name={focused ? 'book-open-variant' : 'book-open-outline'} 
-                    size={30} 
-                    color={color} 
-                  />
-                </View>
-              );
-            } else if (route.name === 'Profile') {
-              icon = (
-                <View style={styles.iconContainer}>
-                  <MaterialCommunityIcons 
-                    name={focused ? 'account' : 'account-outline'} 
-                    size={30} 
-                    color={color} 
-                  />
-                </View>
-              );
-            }
-            
-            return icon;
-          },
-          tabBarActiveTintColor: theme.PRIMARY,
-          tabBarInactiveTintColor: theme.TEXT_SECONDARY,
-          tabBarStyle: defaultTabBarStyle,
-          tabBarItemStyle: {
-            paddingTop: 0,
-            paddingBottom: 20,
-            height: 65,
-          },
-          tabBarLabelStyle: {
-            fontFamily: 'IBMPlexSans_500Medium',
-            fontSize: 12,
-            marginTop: -2,
-            marginBottom: 5,
-          },
-        })}
-      >
-        <Tab.Screen 
-          name="Home" 
-          component={HomeScreen} 
-          options={{
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarIcon: ({ focused, color, size }) => {
+          let icon;
+          
+          // More modern icon selection with custom rendering
+          if (route.name === 'Home') {
+            icon = (
+              <View style={styles.iconContainer}>
+                <MaterialCommunityIcons 
+                  name={focused ? 'home' : 'home-outline'} 
+                  size={30} 
+                  color={color} 
+                />
+              </View>
+            );
+          } else if (route.name === 'Explore') {
+            icon = (
+              <View style={styles.iconContainer}>
+                <MaterialCommunityIcons 
+                  name={focused ? 'compass' : 'compass-outline'} 
+                  size={30} 
+                  color={color} 
+                />
+              </View>
+            );
+          } else if (route.name === 'Tafseer') {
+            icon = (
+              <View style={styles.iconContainer}>
+                <MaterialCommunityIcons 
+                  name={focused ? 'book-open-variant' : 'book-open-outline'} 
+                  size={30} 
+                  color={color} 
+                />
+              </View>
+            );
+          } else if (route.name === 'Profile') {
+            icon = (
+              <View style={styles.iconContainer}>
+                <MaterialCommunityIcons 
+                  name={focused ? 'account' : 'account-outline'} 
+                  size={30} 
+                  color={color} 
+                />
+              </View>
+            );
+          }
+          
+          return icon;
+        },
+        tabBarActiveTintColor: theme.PRIMARY,
+        tabBarInactiveTintColor: theme.TEXT_SECONDARY,
+        tabBarStyle: defaultTabBarStyle,
+        tabBarItemStyle: {
+          paddingTop: 0,
+          paddingBottom: 20,
+          height: 65,
+        },
+        tabBarLabelStyle: {
+          fontFamily: 'IBMPlexSans_500Medium',
+          fontSize: 12,
+          marginTop: -2,
+          marginBottom: 5,
+        },
+      })}
+    >
+      <Tab.Screen 
+        name="Home" 
+        component={HomeStack}
+        options={({ route }) => {
+          // Get the active route name in the HomeStack
+          const routeName = getFocusedRouteNameFromRoute(route) ?? 'HomeMain';
+          
+          return {
             tabBarLabel: ({ focused, color }) => (
               <Text style={[
                 styles.tabBarLabel, 
@@ -164,80 +188,128 @@ const MainApp = () => {
               ]}>
                 Home
               </Text>
-            )
-          }}
-        />
-        <Tab.Screen 
-          name="Explore" 
-          component={ExploreStack}
-          options={({ route }) => {
-            // Get the active route name in the ExploreStack
-            const routeName = getFocusedRouteNameFromRoute(route) ?? 'ExploreMain';
-            
-            return {
-              tabBarLabel: ({ focused, color }) => (
-                <Text style={[
-                  styles.tabBarLabel, 
-                  { 
-                    color: focused ? theme.PRIMARY : theme.TEXT_SECONDARY,
-                    fontFamily: focused ? 'IBMPlexSans_600SemiBold' : 'IBMPlexSans_400Regular'
-                  }
-                ]}>
-                  Explore
-                </Text>
-              ),
-              // Only override display property when needed
-              tabBarStyle: {
-                ...defaultTabBarStyle,
-                display: routeName === 'SurahDetail' ? 'none' : 'flex',
+            ),
+            // Hide tabBar for screens other than HomeMain
+            tabBarStyle: {
+              ...defaultTabBarStyle,
+              display: routeName !== 'HomeMain' ? 'none' : 'flex',
+            }
+          };
+        }}
+      />
+      <Tab.Screen 
+        name="Explore" 
+        component={ExploreStack}
+        options={({ route }) => {
+          // Get the active route name in the ExploreStack
+          const routeName = getFocusedRouteNameFromRoute(route) ?? 'ExploreMain';
+          
+          return {
+            tabBarLabel: ({ focused, color }) => (
+              <Text style={[
+                styles.tabBarLabel, 
+                { 
+                  color: focused ? theme.PRIMARY : theme.TEXT_SECONDARY,
+                  fontFamily: focused ? 'IBMPlexSans_600SemiBold' : 'IBMPlexSans_400Regular'
+                }
+              ]}>
+                Explore
+              </Text>
+            ),
+            // Only override display property when needed
+            tabBarStyle: {
+              ...defaultTabBarStyle,
+              display: routeName === 'SurahDetail' ? 'none' : 'flex',
+            }
+          };
+        }}
+      />
+      <Tab.Screen 
+        name="Tafseer" 
+        component={TafseerScreen}
+        options={{
+          tabBarLabel: ({ focused, color }) => (
+            <Text style={[
+              styles.tabBarLabel, 
+              { 
+                color: focused ? theme.PRIMARY : theme.TEXT_SECONDARY,
+                fontFamily: focused ? 'IBMPlexSans_600SemiBold' : 'IBMPlexSans_400Regular'
               }
-            };
-          }}
-        />
-        <Tab.Screen 
-          name="Tafseer" 
-          component={TafseerScreen}
-          options={{
-            tabBarLabel: ({ focused, color }) => (
-              <Text style={[
-                styles.tabBarLabel, 
-                { 
-                  color: focused ? theme.PRIMARY : theme.TEXT_SECONDARY,
-                  fontFamily: focused ? 'IBMPlexSans_600SemiBold' : 'IBMPlexSans_400Regular'
-                }
-              ]}>
-                Tafseer
-              </Text>
-            )
-          }}
-        />
-        <Tab.Screen 
-          name="Profile" 
-          component={ProfileScreen}
-          options={{
-            tabBarLabel: ({ focused, color }) => (
-              <Text style={[
-                styles.tabBarLabel, 
-                { 
-                  color: focused ? theme.PRIMARY : theme.TEXT_SECONDARY,
-                  fontFamily: focused ? 'IBMPlexSans_600SemiBold' : 'IBMPlexSans_400Regular'
-                }
-              ]}>
-                Profile
-              </Text>
-            )
-          }}
-        />
-      </Tab.Navigator>
+            ]}>
+              Tafseer
+            </Text>
+          )
+        }}
+      />
+      <Tab.Screen 
+        name="Profile" 
+        component={ProfileStack}
+        options={{
+          tabBarLabel: ({ focused, color }) => (
+            <Text style={[
+              styles.tabBarLabel, 
+              { 
+                color: focused ? theme.PRIMARY : theme.TEXT_SECONDARY,
+                fontFamily: focused ? 'IBMPlexSans_600SemiBold' : 'IBMPlexSans_400Regular'
+              }
+            ]}>
+              Profile
+            </Text>
+          )
+        }}
+      />
+    </Tab.Navigator>
+  );
+};
+
+// Main app component with authentication flow
+const AppNavigator = () => {
+  const { theme, isDarkMode } = useTheme();
+  const { user, isGuest, isLoading } = useUser();
+  const [fontsLoaded] = useFonts({
+    IBMPlexSans_100Thin,
+    IBMPlexSans_200ExtraLight, 
+    IBMPlexSans_300Light,
+    IBMPlexSans_400Regular,
+    IBMPlexSans_500Medium,
+    IBMPlexSans_600SemiBold,
+    IBMPlexSans_700Bold,
+  });
+
+  // Show loading screen while fonts are loading or user state is being determined
+  if (!fontsLoaded || isLoading) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: theme.BACKGROUND }]}>
+        <Text style={[styles.loadingText, { color: theme.TEXT_PRIMARY }]}>Loading...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <NavigationContainer>
+      <StatusBar style={isDarkMode ? "light" : "dark"} />
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {!isGuest && !user ? (
+          // Auth screens when not logged in and not in guest mode
+          <Stack.Screen name="Auth" component={AuthNavigator} />
+        ) : (
+          // Main app screens when logged in or in guest mode
+          <Stack.Screen name="MainApp" component={TabNavigator} />
+        )}
+      </Stack.Navigator>
     </NavigationContainer>
   );
 };
 
-// Wrapper component that provides theme context
+// Wrapper component that provides all contexts
 export default function App() {
   return (
     <ThemeProvider>
-      <MainApp />
+      <ReciterProvider>
+        <UserProvider>
+          <AppNavigator />
+        </UserProvider>
+      </ReciterProvider>
     </ThemeProvider>
   );
 }

@@ -14,10 +14,16 @@ import {
   Keyboard,
   Dimensions,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Animated,
+  InputAccessoryView,
+  Alert,
+  I18nManager
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { GEMINI_API_KEY } from '@env';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width, height } = Dimensions.get('window');
 
@@ -28,32 +34,124 @@ const initialSurahs = [];
 const initialMessages = [
   {
     id: '1',
-    text: 'Welcome to AI Tafseer. Ask me anything about the Quran and I will try to help you understand it better.',
+    text: 'Welcome to AI Tafseer. Ask me anything about the Quran or any specific Surah. You can select a Surah for context, but feel free to discuss other Surahs or topics at any time. Your conversation history will be preserved even when changing Surahs.',
     sender: 'ai'
   }
 ];
 
-const TafseerScreen = () => {
+const TafseerScreen = ({ route, navigation }) => {
   const { theme } = useTheme();
+  
+  // UI State
   const [showStartScreen, setShowStartScreen] = useState(true);
   const [showSurahModal, setShowSurahModal] = useState(false);
+  
+  // Content State
+  const [surahs, setSurahs] = useState(initialSurahs);
   const [selectedSurah, setSelectedSurah] = useState(null);
-  const [interactionMode, setInteractionMode] = useState('chat'); // 'chat' or 'ayah'
-  const [showAyahSelector, setShowAyahSelector] = useState(false);
-  const [selectedAyah, setSelectedAyah] = useState(null);
-  const [ayahs, setAyahs] = useState([]);
+  
+  // Chat State
   const [messages, setMessages] = useState(initialMessages);
   const [inputMessage, setInputMessage] = useState('');
+  const [currentChatSurah, setCurrentChatSurah] = useState(null);
+  
+  // Loading State
   const [loading, setLoading] = useState(false);
-  const [showClassicalTafseer, setShowClassicalTafseer] = useState(false);
-  const [surahs, setSurahs] = useState(initialSurahs);
   const [loadingSurahs, setLoadingSurahs] = useState(false);
+  
+  // Animation State
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+  const inputOpacity = useRef(new Animated.Value(1)).current;
+  const dot1Opacity = useRef(new Animated.Value(0.4)).current;
+  const dot2Opacity = useRef(new Animated.Value(0.4)).current;
+  const dot3Opacity = useRef(new Animated.Value(0.4)).current;
+  
+  // Refs
   const scrollViewRef = useRef();
-  const flatListRef = useRef();
+  const inputRef = useRef(null);
+
+  // Add chat history persistence functions
+  // Save messages to AsyncStorage
+  const saveChatHistory = async (updatedMessages) => {
+    try {
+      const chatHistoryData = {
+        messages: updatedMessages,
+        currentChatSurah: currentChatSurah,
+        selectedSurah: selectedSurah
+      };
+      
+      await AsyncStorage.setItem('tafseerChatHistory', JSON.stringify(chatHistoryData));
+    } catch (error) {
+      console.error('Error saving chat history:', error);
+    }
+  };
+
+  // Load messages from AsyncStorage
+  const loadChatHistory = async () => {
+    // If we have route params with ayah, don't load history as we're starting a new specific conversation
+    if (route.params?.surah && route.params?.ayah) {
+      console.log('Route params present, skipping chat history load');
+      return false;
+    }
+    
+    try {
+      const savedChatHistory = await AsyncStorage.getItem('tafseerChatHistory');
+      
+      if (savedChatHistory) {
+        const parsedData = JSON.parse(savedChatHistory);
+        
+        // Only restore data if we have messages
+        if (parsedData.messages && parsedData.messages.length > 0) {
+          setMessages(parsedData.messages);
+          
+          // Restore surah context if available
+          if (parsedData.currentChatSurah) {
+            setCurrentChatSurah(parsedData.currentChatSurah);
+          }
+          
+          if (parsedData.selectedSurah) {
+            setSelectedSurah(parsedData.selectedSurah);
+          }
+          
+          // Skip the start screen if we have chat history
+          setShowStartScreen(false);
+          
+          return true; // Return true if we loaded chat history
+        }
+      }
+      
+      return false; // Return false if no chat history was loaded
+    } catch (error) {
+      console.error('Error loading chat history:', error);
+      return false;
+    }
+  };
+
+  // Clear chat history
+  const clearChatHistory = async () => {
+    try {
+      await AsyncStorage.removeItem('tafseerChatHistory');
+      // Reset state to initial values
+      setMessages(initialMessages);
+      setCurrentChatSurah(null);
+      setSelectedSurah(null);
+    } catch (error) {
+      console.error('Error clearing chat history:', error);
+    }
+  };
 
   // Fetch all surahs from API
   useEffect(() => {
     fetchSurahs();
+    
+    // Try to load chat history on initial mount
+    loadChatHistory().then(historyLoaded => {
+      // If no history was loaded, proceed with normal startup
+      if (!historyLoaded && route.params?.surah && route.params?.ayah) {
+        // Process route params as before
+      }
+    });
   }, []);
 
   const fetchSurahs = async () => {
@@ -89,23 +187,6 @@ const TafseerScreen = () => {
     }
   };
 
-  // Generate ayahs when a surah is selected
-  useEffect(() => {
-    if (selectedSurah) {
-      // Use actual numberOfAyahs from API response
-      setAyahs(generateAyahs(selectedSurah.numberOfAyahs || selectedSurah.ayahs));
-    }
-  }, [selectedSurah]);
-
-  // Mock ayah data generator
-  const generateAyahs = (count) => {
-    return Array.from({ length: count }, (_, i) => ({
-      number: i + 1,
-      text: `Ayah ${i + 1}`,
-      translation: `Translation of Ayah ${i + 1}`
-    }));
-  };
-
   // Auto scroll to bottom of chat
   useEffect(() => {
     if (scrollViewRef.current) {
@@ -115,6 +196,268 @@ const TafseerScreen = () => {
     }
   }, [messages]);
 
+  // Add keyboard listeners
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      (e) => {
+        setKeyboardVisible(true);
+        setKeyboardHeight(e.endCoordinates.height);
+        Animated.timing(inputOpacity, {
+          toValue: 0.97,
+          duration: 200,
+          useNativeDriver: true,
+        }).start();
+        
+        // Scroll to bottom when keyboard appears
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    );
+    
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => {
+        setKeyboardVisible(false);
+        setKeyboardHeight(0);
+        Animated.timing(inputOpacity, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }).start();
+      }
+    );
+
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, []);
+
+  // Add this new useEffect to handle route params for prefilled questions
+  useEffect(() => {
+    // Check if we have route params with surah and ayah info
+    if (route.params?.surah && route.params?.ayah) {
+      console.log("Received route params with ayah:", route.params);
+      
+      // Set to false immediately to prevent showing start screen
+      setShowStartScreen(false);
+      
+      // We'll handle route params once surahs are loaded
+      if (surahs.length > 0) {
+        const { surah, ayah, mode, initialQuestion } = route.params;
+        
+        console.log("Processing ayah navigation with initial question:", initialQuestion);
+        
+        // First, find the surah in our list to ensure we have a complete object
+        const matchedSurah = surahs.find(s => s.number === surah.number);
+        
+        // Use the matched surah from our list if available, otherwise use the passed surah
+        const surahToUse = matchedSurah || surah;
+        
+        // Set the selected surah
+        setSelectedSurah(surahToUse);
+        setCurrentChatSurah(surahToUse);
+        
+        // Create a system message about the context
+        const contextMessageId = `context-${Date.now()}`;
+        const contextMessage = {
+          id: contextMessageId,
+          text: `You're now discussing Surah ${surahToUse.englishName} (${surahToUse.name}), Ayah ${ayah.numberInSurah}.`,
+          sender: 'system'
+        };
+        
+        // Create an ayah display message
+        const ayahMessageId = `ayah-${Date.now()}`;
+        const ayahMessage = {
+          id: ayahMessageId,
+          text: `${ayah.text}\n\n${ayah.translation}`,
+          sender: 'ayah'
+        };
+        
+        // Update the messages
+        const newMessages = [...initialMessages, contextMessage, ayahMessage];
+        setMessages(newMessages);
+        
+        // Save chat history
+        saveChatHistory(newMessages);
+        
+        // If there's an initial question, set it in the input field and send it
+        if (initialQuestion) {
+          // Set the input message directly
+          setInputMessage(initialQuestion);
+          
+          // Auto-send the question after a short delay
+          setTimeout(() => {
+            console.log("Auto-sending initial question:", initialQuestion);
+            handleSendMessage(initialQuestion);
+            
+            // Clear the input field after sending
+            setInputMessage('');
+          }, 800);
+        }
+      }
+    }
+  }, [route.params, surahs]);
+
+  /**
+   * Process AI response text to replace instances of "God" with "ﷲ"
+   */
+  const processAIResponse = (text) => {
+    // Replace "God" with "ﷲ" (Allah in Arabic calligraphy)
+    return text.replace(/\bGod\b/g, "ﷲ");
+  };
+
+  /**
+   * Handle user sending a message in the chat
+   */
+  const handleSendMessage = async (messageText = null) => {
+    // Use provided message or input field text
+    const textToSend = messageText || inputMessage;
+    
+    if (textToSend.trim() === '') return;
+    
+    // Add user message to the chat with unique ID
+    const userMessageId = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const userMessage = {
+      id: userMessageId,
+      text: textToSend,
+      sender: 'user'
+    };
+    
+    // Update messages with user's message
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
+    setInputMessage('');
+    setLoading(true);
+    
+    // Save chat history after adding user message
+    saveChatHistory(updatedMessages);
+
+    try {
+      // Determine if we should include the current surah context
+      let enhancedUserMessage;
+      
+      if (currentChatSurah) {
+        // If we have a current surah selected, mention it but don't restrict to it
+        enhancedUserMessage = `
+          Context: The user has currently selected Surah ${currentChatSurah.englishName} (${currentChatSurah.name}), 
+          but they may be asking about any surah or general Quranic knowledge.
+          
+          User question: ${textToSend}
+          
+          Answer the question directly. If it's about the currently selected surah, provide specific details.
+          If it's about another surah or a general Quranic topic, answer that accordingly without restricting to the current surah.
+          
+          Format your response in 3-5 concise sentences, being scholarly and helpful.
+          
+          IMPORTANT: Always use "ﷲ" (Allah) instead of "God" in your response.
+        `;
+      } else {
+        // General Quran prompt if no surah is selected
+        enhancedUserMessage = `
+          The user is asking a general question about the Quran or Islamic principles.
+          Provide a scholarly, concise response based on mainstream Islamic understanding.
+          
+          User question: ${textToSend}
+          
+          Keep your response focused on the Quran's teachings, themes, contexts, or other relevant aspects.
+          Format your response in 3-5 sentences, being helpful but brief.
+          
+          IMPORTANT: Always use "ﷲ" (Allah) instead of "God" in your response.
+        `;
+      }
+      
+      // Call the Gemini API directly
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: enhancedUserMessage }]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.4,
+            topK: 32,
+            topP: 0.95,
+            maxOutputTokens: 800,
+          }
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      let aiResponseText = "I couldn't generate a response. Please try again.";
+      
+      if (data.candidates && 
+          data.candidates[0] && 
+          data.candidates[0].content && 
+          data.candidates[0].content.parts && 
+          data.candidates[0].content.parts[0]) {
+        aiResponseText = data.candidates[0].content.parts[0].text;
+      }
+      
+      // Process the response to replace "God" with "ﷲ"
+      aiResponseText = processAIResponse(aiResponseText);
+      
+      // Add AI response to messages with unique ID
+      const aiMessageId = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      setMessages(prevMessages => {
+        const newMessages = [
+          ...prevMessages, 
+          {
+            id: aiMessageId,
+            text: aiResponseText,
+            sender: 'ai',
+            showSuggestions: true // Flag to show suggestions after this message
+          }
+        ];
+        
+        // Save updated messages including AI response
+        saveChatHistory(newMessages);
+        
+        return newMessages;
+      });
+      
+    } catch (error) {
+      console.error('Error getting AI response:', error);
+      // Add error message with unique ID
+      const generalErrorId = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      setMessages(prevMessages => {
+        const newMessages = [
+          ...prevMessages, 
+          {
+            id: generalErrorId,
+            text: "I'm sorry, I couldn't process your request. Please try again.",
+            sender: 'ai'
+          }
+        ];
+        
+        // Save updated messages including error message
+        saveChatHistory(newMessages);
+        
+        return newMessages;
+      });
+    } finally {
+      setLoading(false);
+      // Auto-scroll to the bottom
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+    
+    Keyboard.dismiss();
+  };
+
   const handleStartTafseer = () => {
     setShowStartScreen(false);
     setShowSurahModal(true);
@@ -123,63 +466,284 @@ const TafseerScreen = () => {
   const handleSurahSelect = (surah) => {
     setSelectedSurah(surah);
     setShowSurahModal(false);
-    if (interactionMode === 'ayah') {
-      setShowAyahSelector(true);
-    }
-  };
-
-  const handleModeChange = (mode) => {
-    setInteractionMode(mode);
-    if (mode === 'ayah' && selectedSurah) {
-      setShowAyahSelector(true);
-    } else {
-      setShowAyahSelector(false);
-    }
-  };
-
-  const handleAyahSelect = (ayah) => {
-    setSelectedAyah(ayah);
-    setShowAyahSelector(false);
     
-    // Add a message about the selected ayah
-    const newMessage = {
-      id: Date.now().toString(),
-      text: `You selected Surah ${selectedSurah.englishName}, Ayah ${ayah.number}`,
-      sender: 'system'
-    };
-    setMessages([...messages, newMessage]);
-  };
-
-  const handleSendMessage = () => {
-    if (inputMessage.trim() === '') return;
+    // Generate unique IDs
+    const uniqueId = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const uniqueAiId = `${Date.now() + 1}-${Math.floor(Math.random() * 1000)}`;
+    const suggestionId = `${Date.now() + 2}-${Math.floor(Math.random() * 1000)}`;
     
-    // Add user message
-    const userMessage = {
-      id: Date.now().toString(),
-      text: inputMessage,
-      sender: 'user'
-    };
+    // Add surah selection guidance message
+    let surahSelectionMessage;
+    let aiConfirmationMessage;
     
-    setMessages([...messages, userMessage]);
-    setInputMessage('');
-    setLoading(true);
-    
-    // Simulate AI response after a delay
-    setTimeout(() => {
-      const aiResponse = {
-        id: (Date.now() + 1).toString(),
-        text: `This is a simulated AI response to your question: "${inputMessage}"`,
-        sender: 'ai'
+    // Check if this is the first surah selected or just changing surahs
+    if (!currentChatSurah) {
+      // First surah selection
+      surahSelectionMessage = {
+        id: uniqueId,
+        text: `You've selected Surah ${surah.englishName} (${surah.name}).`,
+        sender: 'system'
       };
-      setMessages(prevMessages => [...prevMessages, aiResponse]);
-      setLoading(false);
-    }, 1500);
+      
+      // Add an AI message that clarifies users can ask about anything
+      aiConfirmationMessage = {
+        id: uniqueAiId,
+        text: `I can help with Surah ${surah.englishName}, but feel free to ask about any other surah or Islamic topic as well. Your conversation history will be maintained as you explore different topics.`,
+        sender: 'ai',
+        showSuggestions: true
+      };
+      
+      // Add both messages
+      setMessages(prevMessages => {
+        const newMessages = [...prevMessages, surahSelectionMessage, aiConfirmationMessage];
+        // Save chat history after adding messages
+        saveChatHistory(newMessages);
+        return newMessages;
+      });
+    } else {
+      // Changing from one surah to another
+      surahSelectionMessage = {
+        id: uniqueId,
+        text: `You've changed to Surah ${surah.englishName} (${surah.name}). Previous conversation history is preserved.`,
+        sender: 'system'
+      };
+      
+      // Add an AI message with suggestions specific to this surah
+      aiConfirmationMessage = {
+        id: uniqueAiId,
+        text: `Here are some suggested questions about Surah ${surah.englishName}:`,
+        sender: 'ai',
+        showSuggestions: true
+      };
+      
+      // Add messages
+      setMessages(prevMessages => {
+        const newMessages = [...prevMessages, surahSelectionMessage, aiConfirmationMessage];
+        // Save chat history after adding messages
+        saveChatHistory(newMessages);
+        return newMessages;
+      });
+    }
     
-    Keyboard.dismiss();
+    // Set current chat surah context
+    setCurrentChatSurah(surah);
+    
+    // Scroll to the bottom after updating messages
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
   };
 
-  const handleShowClassicalTafseer = () => {
-    setShowClassicalTafseer(!showClassicalTafseer);
+  // Add this effect for typing animation
+  useEffect(() => {
+    if (loading) {
+      // Set up repeating animation for typing dots
+      const animateDots = () => {
+        // Sequence for dot 1
+        Animated.sequence([
+          Animated.timing(dot1Opacity, {
+            toValue: 1,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+          Animated.timing(dot1Opacity, {
+            toValue: 0.4,
+            duration: 400,
+            useNativeDriver: true,
+          })
+        ]).start();
+        
+        // Sequence for dot 2 with delay
+        setTimeout(() => {
+          Animated.sequence([
+            Animated.timing(dot2Opacity, {
+              toValue: 1,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+            Animated.timing(dot2Opacity, {
+              toValue: 0.4,
+              duration: 400,
+              useNativeDriver: true,
+            })
+          ]).start();
+        }, 150);
+        
+        // Sequence for dot 3 with delay
+        setTimeout(() => {
+          Animated.sequence([
+            Animated.timing(dot3Opacity, {
+              toValue: 1,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+            Animated.timing(dot3Opacity, {
+              toValue: 0.4,
+              duration: 400,
+              useNativeDriver: true,
+            })
+          ]).start(() => {
+            // Restart animation after all dots have animated
+            if (loading) {
+              animateDots();
+            }
+          });
+        }, 300);
+      };
+      
+      animateDots();
+    }
+  }, [loading]);
+
+  // Get contextual suggestions based on current surah and previous messages
+  const getContextualSuggestions = (surah, prevMessages) => {
+    if (!surah) {
+      // General Quran questions when no surah is selected
+      return [
+        {
+          id: 'general-themes',
+          text: 'What are the main themes of the Quran?'
+        },
+        {
+          id: 'general-structure',
+          text: 'How is the Quran structured?'
+        },
+        {
+          id: 'general-revelation',
+          text: 'How was the Quran revealed?'
+        },
+        {
+          id: 'general-preservation',
+          text: 'How has the Quran been preserved?'
+        },
+        {
+          id: 'general-miracles',
+          text: 'What are some linguistic miracles in the Quran?'
+        },
+        {
+          id: 'general-tafseer',
+          text: 'What are the different approaches to tafseer?'
+        },
+        {
+          id: 'general-stories',
+          text: 'What prophets are mentioned in the Quran?'
+        },
+        {
+          id: 'general-science',
+          text: 'Are there scientific references in the Quran?'
+        }
+      ].sort(() => 0.5 - Math.random()).slice(0, 4);
+    }
+    
+    // Get the most recent AI message to analyze context
+    const recentAiMessages = prevMessages
+      .filter(msg => msg.sender === 'ai')
+      .slice(-2);
+    
+    // Basic context detection
+    const messageTexts = recentAiMessages.map(msg => msg.text.toLowerCase());
+    const mentionsThemes = messageTexts.some(txt => txt.includes('theme') || txt.includes('topic'));
+    const mentionsHistory = messageTexts.some(txt => txt.includes('history') || txt.includes('context') || txt.includes('revealed'));
+    const mentionsRelevance = messageTexts.some(txt => txt.includes('today') || txt.includes('modern') || txt.includes('relevance'));
+    
+    // Generate two random ayah numbers from this surah
+    const ayahCount = surah.numberOfAyahs || 10;
+    const randomAyah1 = Math.floor(Math.random() * ayahCount) + 1;
+    let randomAyah2 = Math.floor(Math.random() * ayahCount) + 1;
+    
+    // Ensure we have different ayahs
+    while (randomAyah2 === randomAyah1 && ayahCount > 1) {
+      randomAyah2 = Math.floor(Math.random() * ayahCount) + 1;
+    }
+    
+    // Pool of possible suggestions
+    const surahSuggestions = [
+      {
+        id: 'surah-theme',
+        text: 'What are the main themes of this surah?',
+        category: 'theme'
+      },
+      {
+        id: 'surah-context',
+        text: 'What is the historical context of this surah?',
+        category: 'history'
+      },
+      {
+        id: 'surah-relevance',
+        text: 'How is this surah relevant today?',
+        category: 'relevance'
+      },
+      {
+        id: 'surah-order',
+        text: 'Why is this surah placed where it is in the Quran?',
+        category: 'structure'
+      },
+      {
+        id: 'surah-name',
+        text: `Why is Surah ${surah.englishName} named this way?`,
+        category: 'name'
+      },
+      {
+        id: 'surah-lessons',
+        text: 'What life lessons can we learn from this surah?',
+        category: 'relevance'
+      },
+      {
+        id: 'surah-compare',
+        text: 'How does this surah compare to others with similar themes?',
+        category: 'comparison'
+      },
+      {
+        id: 'other-surahs',
+        text: 'Which other surahs are related to this one?',
+        category: 'related'
+      },
+      {
+        id: 'general-question',
+        text: 'Tell me about another surah in the Quran',
+        category: 'general'
+      }
+    ];
+    
+    const ayahSuggestions = [
+      {
+        id: `ayah-meaning-${randomAyah1}`,
+        text: `What is the meaning of ayah ${randomAyah1}?`,
+        category: 'ayah'
+      },
+      {
+        id: `ayah-context-${randomAyah1}`,
+        text: `What is the context of ayah ${randomAyah1}?`,
+        category: 'ayah'
+      },
+      {
+        id: `ayah-meaning-${randomAyah2}`,
+        text: `Can you explain ayah ${randomAyah2} of this surah?`,
+        category: 'ayah'
+      },
+      {
+        id: `ayah-relevance-${randomAyah2}`,
+        text: `How is ayah ${randomAyah2} relevant today?`,
+        category: 'ayah'
+      }
+    ];
+    
+    // Filter suggestions to avoid repeating categories that were recently discussed
+    const filteredSurahSuggestions = surahSuggestions.filter(suggestion => {
+      if (suggestion.category === 'theme' && mentionsThemes) return false;
+      if (suggestion.category === 'history' && mentionsHistory) return false;
+      if (suggestion.category === 'relevance' && mentionsRelevance) return false;
+      return true;
+    });
+    
+    // Combine and get exactly 4 suggestions
+    const combinedSuggestions = [...filteredSurahSuggestions, ...ayahSuggestions];
+    
+    // Shuffle the array to get random selection
+    const shuffled = combinedSuggestions.sort(() => 0.5 - Math.random());
+    
+    // Return exactly 4 suggestions
+    return shuffled.slice(0, 4);
   };
 
   const renderSurahItem = ({ item }) => (
@@ -200,42 +764,123 @@ const TafseerScreen = () => {
     </TouchableOpacity>
   );
 
-  const renderAyahItem = ({ item }) => (
-    <TouchableOpacity
-      style={[styles.ayahItem, { 
-        borderColor: theme.BORDER,
-        backgroundColor: selectedAyah?.number === item.number ? theme.PRIMARY_LIGHT : theme.SURFACE 
-      }]}
-      onPress={() => handleAyahSelect(item)}
-    >
-      <View style={[styles.ayahNumberCircle, { backgroundColor: theme.PRIMARY }]}>
-        <Text style={[styles.ayahNumberText, { color: theme.WHITE }]}>{item.number}</Text>
-      </View>
-      <View style={styles.ayahItemContent}>
-        <Text style={[styles.ayahText, { color: theme.TEXT_PRIMARY }]}>{item.text}</Text>
-        <Text style={[styles.ayahTranslationText, { color: theme.TEXT_SECONDARY }]}>{item.translation}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-
-  const renderMessage = ({ item }) => {
+  const renderMessage = ({ item, index }) => {
+    if (item.sender === 'system') {
+      return (
+        <View style={[styles.systemMessage, { backgroundColor: theme.SURFACE_VARIANT }]}>
+          <Text style={[styles.systemMessageText, { color: theme.TEXT_SECONDARY }]}>
+            {item.text}
+          </Text>
+        </View>
+      );
+    } else if (item.sender === 'ayah') {
+      // Special rendering for ayah messages
+      const parts = item.text.split('\n\n');
+      const arabicText = parts[0];
+      const translationText = parts[1] || '';
+      
+      return (
+        <View style={[styles.ayahMessage, { backgroundColor: theme.PRIMARY_LIGHT, borderColor: theme.PRIMARY }]}>
+          <View style={styles.ayahMessageContent}>
+            <Text style={[styles.ayahArabicText, { color: theme.TEXT_PRIMARY }]}>
+              {arabicText}
+            </Text>
+            {translationText && (
+              <Text style={[styles.ayahTranslationText, { color: theme.TEXT_SECONDARY }]}>
+                {translationText}
+              </Text>
+            )}
+          </View>
+        </View>
+      );
+    }
+    
     let containerStyle, textStyle;
+    const isLastMessage = index === messages.length - 1;
     
     if (item.sender === 'user') {
       containerStyle = [styles.userMessageContainer, { backgroundColor: theme.PRIMARY }];
-      textStyle = [styles.messageText, { color: theme.WHITE }];
+      textStyle = [styles.messageText, { color: theme.WHITE, fontFamily: 'IBMPlexSans_400Regular' }];
     } else if (item.sender === 'ai') {
       containerStyle = [styles.aiMessageContainer, { backgroundColor: theme.SURFACE, borderColor: theme.BORDER }];
-      textStyle = [styles.messageText, { color: theme.TEXT_PRIMARY }];
+      textStyle = [styles.messageText, { color: theme.TEXT_PRIMARY, fontFamily: 'IBMPlexSans_400Regular' }];
     } else {
       containerStyle = [styles.systemMessageContainer, { backgroundColor: theme.SURFACE_SECONDARY }];
-      textStyle = [styles.messageText, { color: theme.TEXT_SECONDARY, fontStyle: 'italic' }];
+      textStyle = [styles.messageText, { color: theme.TEXT_SECONDARY, fontStyle: 'italic', fontFamily: 'IBMPlexSans_400Regular' }];
     }
     
+    // Check if text contains Arabic characters
+    const containsArabic = /[\u0600-\u06FF]/.test(item.text);
+    
     return (
-      <View style={[styles.messageRow, { justifyContent: item.sender === 'user' ? 'flex-end' : 'flex-start' }]}>
-        <View style={containerStyle}>
-          <Text style={textStyle}>{item.text}</Text>
+      <View>
+        <View style={[styles.messageRow, { justifyContent: item.sender === 'user' ? 'flex-end' : 'flex-start' }]}>
+          <View style={containerStyle}>
+            <Text style={[
+              textStyle, 
+              containsArabic ? { 
+                textAlign: 'right', 
+                writingDirection: 'rtl',
+                fontFamily: 'IBMPlexSans_500Medium'
+              } : {}
+            ]}>
+              {item.text}
+            </Text>
+          </View>
+        </View>
+        
+        {/* Show suggestions after AI messages with the showSuggestions flag and if it's the last message */}
+        {item.sender === 'ai' && item.showSuggestions && isLastMessage && !loading && (
+          <View style={styles.messageSuggestionsContainer}>
+            <Text style={[styles.suggestionsPrompt, { color: theme.TEXT_SECONDARY }]}>
+              You might want to ask about:
+            </Text>
+            <View style={styles.messageSuggestionChips}>
+              {/* Get exactly 4 contextual suggestions */}
+              {getContextualSuggestions(currentChatSurah, messages).map(suggestion => (
+                <TouchableOpacity
+                  key={suggestion.id}
+                  style={[styles.messageSuggestionChip, { backgroundColor: theme.PRIMARY_LIGHT }]}
+                  onPress={() => {
+                    // Only set the input message, don't send it automatically
+                    setInputMessage(suggestion.text);
+                    // Focus the input to show the keyboard
+                    inputRef.current?.focus();
+                  }}
+                >
+                  <Text style={[styles.messageSuggestionText, { color: theme.PRIMARY }]}>
+                    {suggestion.text}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  const renderLoadingIndicator = () => {
+    return (
+      <View style={styles.messageRow}>
+        <View style={[styles.loadingIndicatorContainer, { 
+          backgroundColor: theme.SURFACE,
+          borderColor: theme.BORDER
+        }]}>
+          <View style={styles.typingAnimation}>
+            <Animated.View style={[styles.typingDot, { 
+              backgroundColor: theme.PRIMARY, 
+              opacity: dot1Opacity 
+            }]} />
+            <Animated.View style={[styles.typingDot, { 
+              backgroundColor: theme.PRIMARY, 
+              opacity: dot2Opacity 
+            }]} />
+            <Animated.View style={[styles.typingDot, { 
+              backgroundColor: theme.PRIMARY, 
+              opacity: dot3Opacity 
+            }]} />
+          </View>
         </View>
       </View>
     );
@@ -265,13 +910,44 @@ const TafseerScreen = () => {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.BACKGROUND }]}>
       <StatusBar barStyle={theme.DARK ? "light-content" : "dark-content"} />
-      
+
       <View style={styles.header}>
-        <Text style={[styles.screenTitle, { color: theme.TEXT_PRIMARY }]}>Tafseer</Text>
+        <View style={styles.headerTopRow}>
+          <Text style={[styles.screenTitle, { color: theme.TEXT_PRIMARY }]}>Tafseer</Text>
+          
+          {/* Add clear history button */}
+          <TouchableOpacity
+            onPress={() => {
+              Alert.alert(
+                "Clear Chat History",
+                "Are you sure you want to clear your chat history? This cannot be undone.",
+                [
+                  {
+                    text: "Cancel",
+                    style: "cancel"
+                  },
+                  { 
+                    text: "Clear", 
+                    onPress: () => {
+                      clearChatHistory();
+                      // Reset to start screen
+                      setShowStartScreen(true);
+                    },
+                    style: "destructive"
+                  }
+                ]
+              )
+            }}
+            style={styles.clearHistoryButton}
+          >
+            <MaterialCommunityIcons name="delete-outline" size={22} color={theme.TEXT_SECONDARY} />
+          </TouchableOpacity>
+        </View>
+        
         {selectedSurah && (
           <View style={styles.headerSurahInfo}>
             <Text style={[styles.selectedSurahText, { color: theme.TEXT_SECONDARY }]}>
-              {selectedSurah.englishName} {selectedAyah ? `- Ayah ${selectedAyah.number}` : ''}
+              {selectedSurah.englishName}
             </Text>
             <TouchableOpacity
               style={[styles.changeSurahButton, { backgroundColor: theme.PRIMARY_LIGHT }]}
@@ -284,164 +960,115 @@ const TafseerScreen = () => {
       </View>
       
       {!selectedSurah && (
-        <View style={styles.selectSurahPrompt}>
+        <View style={styles.optionalSurahPrompt}>
           <Text style={[styles.promptText, { color: theme.TEXT_SECONDARY }]}>
-            Please select a Surah to begin
+            You can ask general questions or select a specific Surah for deeper discussion
           </Text>
           <TouchableOpacity
-            style={[styles.selectSurahButton, { backgroundColor: theme.PRIMARY }]}
+            style={[styles.selectSurahButton, { backgroundColor: theme.PRIMARY_LIGHT }]}
             onPress={() => setShowSurahModal(true)}
           >
-            <Text style={[styles.buttonText, { color: theme.WHITE }]}>Select Surah</Text>
+            <Text style={[styles.buttonText, { color: theme.PRIMARY }]}>Select Surah (Optional)</Text>
           </TouchableOpacity>
         </View>
       )}
       
-      {selectedSurah && (
-        <View style={styles.modeSelector}>
-          <TouchableOpacity
-            style={[
-              styles.modeButton,
-              interactionMode === 'chat' 
-                ? { backgroundColor: theme.PRIMARY } 
-                : { backgroundColor: theme.SURFACE, borderColor: theme.BORDER }
-            ]}
-            onPress={() => handleModeChange('chat')}
-          >
-            <Text
-              style={[
-                styles.modeButtonText,
-                { color: interactionMode === 'chat' ? theme.WHITE : theme.TEXT_PRIMARY }
-              ]}
-            >
-              Chat with AI
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.modeButton,
-              interactionMode === 'ayah' 
-                ? { backgroundColor: theme.PRIMARY } 
-                : { backgroundColor: theme.SURFACE, borderColor: theme.BORDER }
-            ]}
-            onPress={() => handleModeChange('ayah')}
-          >
-            <Text
-              style={[
-                styles.modeButtonText,
-                { color: interactionMode === 'ayah' ? theme.WHITE : theme.TEXT_PRIMARY }
-              ]}
-            >
-              Select Specific Ayah
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-      
-      {showAyahSelector && (
-        <View style={styles.ayahSelectorContainer}>
-          <View style={styles.ayahSelectorHeader}>
-            <Text style={[styles.ayahSelectorTitle, { color: theme.TEXT_PRIMARY }]}>
-              Select an Ayah from {selectedSurah.englishName}
-            </Text>
-            <TouchableOpacity onPress={() => setShowAyahSelector(false)}>
-              <MaterialCommunityIcons name="close" size={24} color={theme.TEXT_PRIMARY} />
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            data={ayahs}
-            renderItem={renderAyahItem}
-            keyExtractor={(item) => item.number.toString()}
-            style={styles.ayahList}
-            contentContainerStyle={styles.ayahListContent}
-            showsVerticalScrollIndicator={false}
-          />
-        </View>
-      )}
-      
-      {selectedSurah && (!showAyahSelector || selectedAyah) && (
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardAvoidView}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+      >
         <View style={styles.chatContainerWrapper}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.chatContainer}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.messagesContainer}
+            contentContainerStyle={[
+              styles.messagesContent,
+              {paddingBottom: isKeyboardVisible ? 20 : 20}
+            ]}
+            showsVerticalScrollIndicator={false}
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+            onContentSizeChange={() => {
+              if (isKeyboardVisible) {
+                scrollViewRef.current?.scrollToEnd({ animated: true });
+              }
+            }}
           >
-            <ScrollView
-              ref={scrollViewRef}
-              style={styles.messagesContainer}
-              contentContainerStyle={styles.messagesContent}
-              showsVerticalScrollIndicator={false}
-            >
-              <FlatList
-                data={messages}
-                renderItem={renderMessage}
-                keyExtractor={(item) => item.id}
-                scrollEnabled={false}
-              />
-              
-              {loading && (
-                <View style={[styles.loadingContainer, { backgroundColor: theme.SURFACE }]}>
-                  <ActivityIndicator size="small" color={theme.PRIMARY} />
-                  <Text style={[styles.loadingText, { color: theme.TEXT_SECONDARY }]}>AI is thinking...</Text>
-                </View>
-              )}
-              
-              {!loading && messages.length > 1 && messages[messages.length - 1].sender === 'ai' && (
-                <TouchableOpacity
-                  style={[styles.classicalTafseerButton, { 
-                    backgroundColor: showClassicalTafseer ? theme.PRIMARY_LIGHT : theme.SURFACE,
-                    borderColor: theme.BORDER
-                  }]}
-                  onPress={handleShowClassicalTafseer}
-                >
-                  <Text style={[styles.classicalTafseerButtonText, { color: theme.TEXT_PRIMARY }]}>
-                    {showClassicalTafseer ? 'Hide' : 'View'} Classical Tafseer
-                  </Text>
-                  <MaterialCommunityIcons 
-                    name={showClassicalTafseer ? "chevron-up" : "chevron-down"} 
-                    size={20} 
-                    color={theme.TEXT_PRIMARY} 
-                  />
-                </TouchableOpacity>
-              )}
-              
-              {showClassicalTafseer && (
-                <View style={[styles.classicalTafseerContainer, { 
-                  backgroundColor: theme.SURFACE,
-                  borderColor: theme.BORDER
-                }]}>
-                  <Text style={[styles.classicalTafseerTitle, { color: theme.TEXT_PRIMARY }]}>
-                    Classical Tafseer
-                  </Text>
-                  <Text style={[styles.classicalTafseerText, { color: theme.TEXT_SECONDARY }]}>
-                    This is a mock classical tafseer text. In the actual implementation, this would contain the traditional interpretation of the selected ayah from renowned scholars like Ibn Kathir, al-Qurtubi, or al-Tabari.
-                    {'\n\n'}
-                    The text would provide historical context, linguistic analysis, and related hadiths to give a comprehensive understanding of the verse.
-                  </Text>
-                </View>
-              )}
-            </ScrollView>
+            <FlatList
+              data={messages}
+              renderItem={renderMessage}
+              keyExtractor={(item) => item.id}
+              scrollEnabled={false}
+            />
             
-            <View style={[styles.inputContainer, { backgroundColor: theme.SURFACE, borderTopColor: theme.BORDER }]}>
-              <TextInput
-                style={[styles.input, { color: theme.TEXT_PRIMARY, backgroundColor: theme.BACKGROUND }]}
-                placeholder="Ask a question about this Surah..."
-                placeholderTextColor={theme.TEXT_TERTIARY}
-                value={inputMessage}
-                onChangeText={setInputMessage}
-                multiline
-              />
-              <TouchableOpacity
-                style={[styles.sendButton, { backgroundColor: theme.PRIMARY }]}
-                onPress={handleSendMessage}
-                disabled={inputMessage.trim() === ''}
-              >
-                <MaterialCommunityIcons name="send" size={20} color={theme.WHITE} />
-              </TouchableOpacity>
-            </View>
-          </KeyboardAvoidingView>
+            {loading && renderLoadingIndicator()}
+          </ScrollView>
+          
+          <Animated.View 
+            style={[
+              styles.inputContainer, 
+              { 
+                backgroundColor: theme.SURFACE, 
+                borderTopColor: theme.BORDER,
+                opacity: inputOpacity,
+                shadowColor: theme.SHADOW,
+                shadowOffset: { width: 0, height: -3 },
+                shadowOpacity: isKeyboardVisible ? 0.1 : 0,
+                shadowRadius: 5,
+                elevation: isKeyboardVisible ? 3 : 0,
+              }
+            ]}
+          >
+            <TextInput
+              ref={inputRef}
+              style={[
+                styles.input, 
+                { 
+                  color: theme.TEXT_PRIMARY, 
+                  backgroundColor: theme.BACKGROUND 
+                }
+              ]}
+              placeholder={selectedSurah 
+                ? "Ask a question about this Surah..." 
+                : "Ask anything about the Quran..."}
+              placeholderTextColor={theme.TEXT_TERTIARY}
+              value={inputMessage}
+              onChangeText={setInputMessage}
+              multiline
+              scrollEnabled
+              autoCorrect={true}
+              spellCheck={true}
+              returnKeyType="default"
+              keyboardAppearance={theme.DARK ? 'dark' : 'light'}
+              enablesReturnKeyAutomatically={true}
+              maxLength={1000}
+              onFocus={() => {
+                setTimeout(() => {
+                  scrollViewRef.current?.scrollToEnd({ animated: true });
+                }, 100);
+              }}
+            />
+            <TouchableOpacity
+              style={[
+                styles.sendButton, 
+                { 
+                  backgroundColor: inputMessage.trim() === '' ? theme.PRIMARY_LIGHT : theme.PRIMARY,
+                  opacity: inputMessage.trim() === '' ? 0.7 : 1
+                }
+              ]}
+              onPress={() => {
+                if (inputMessage.trim() !== '') {
+                  handleSendMessage(inputMessage);
+                }
+              }}
+              disabled={inputMessage.trim() === ''}
+            >
+              <MaterialCommunityIcons name="send" size={20} color={theme.WHITE} />
+            </TouchableOpacity>
+          </Animated.View>
         </View>
-      )}
+      </KeyboardAvoidingView>
       
       {/* Surah Selection Modal */}
       <Modal
@@ -524,6 +1151,11 @@ const styles = StyleSheet.create({
     paddingTop: StatusBar.currentHeight || 40,
     paddingBottom: 8,
   },
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   headerSurahInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -570,90 +1202,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'IBMPlexSans_600SemiBold',
   },
-  modeSelector: {
-    flexDirection: 'row',
-    padding: 16,
-    justifyContent: 'space-between',
-  },
-  modeButton: {
+  keyboardAvoidView: {
     flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 8,
-    borderWidth: 1,
-  },
-  modeButtonText: {
-    fontSize: 14,
-    fontFamily: 'IBMPlexSans_600SemiBold',
-  },
-  ayahSelectorContainer: {
-    flex: 1,
-    padding: 16,
-    paddingTop: 0,
-  },
-  ayahSelectorHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  ayahSelectorTitle: {
-    fontSize: 16,
-    fontFamily: 'IBMPlexSans_600SemiBold',
-  },
-  ayahList: {
-    flex: 1,
-  },
-  ayahListContent: {
-    paddingBottom: 20,
-  },
-  ayahItem: {
-    flexDirection: 'row',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  ayahNumberCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  ayahNumberText: {
-    fontSize: 14,
-    fontFamily: 'IBMPlexSans_600SemiBold',
-  },
-  ayahItemContent: {
-    flex: 1,
-  },
-  ayahText: {
-    fontSize: 16,
-    fontFamily: 'IBMPlexSans_500Medium',
-  },
-  ayahTranslationText: {
-    fontSize: 14,
-    fontFamily: 'IBMPlexSans_400Regular',
-    marginTop: 2,
+    width: '100%',
   },
   chatContainerWrapper: {
     flex: 1,
     height: '100%',
-  },
-  chatContainer: {
-    flex: 1,
+    marginBottom: 50,
   },
   messagesContainer: {
     flex: 1,
     padding: 16,
   },
   messagesContent: {
+    flexGrow: 1,
     paddingBottom: 16,
   },
   messageRow: {
@@ -686,64 +1249,28 @@ const styles = StyleSheet.create({
     fontFamily: 'IBMPlexSans_400Regular',
     lineHeight: 22,
   },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 16,
-    maxWidth: '80%',
-    marginBottom: 16,
-    alignSelf: 'flex-start',
-  },
-  loadingText: {
-    fontSize: 14,
-    fontFamily: 'IBMPlexSans_400Regular',
-    marginLeft: 8,
-  },
-  classicalTafseerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 10,
-    borderRadius: 8,
-    marginTop: 8,
-    marginBottom: 12,
-    borderWidth: 1,
-  },
-  classicalTafseerButtonText: {
-    fontSize: 15,
-    fontFamily: 'IBMPlexSans_500Medium',
-    marginRight: 4,
-  },
-  classicalTafseerContainer: {
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-    borderWidth: 1,
-  },
-  classicalTafseerTitle: {
-    fontSize: 16,
-    fontFamily: 'IBMPlexSans_600SemiBold',
-    marginBottom: 8,
-  },
-  classicalTafseerText: {
-    fontSize: 15,
-    fontFamily: 'IBMPlexSans_400Regular',
-    lineHeight: 22.5, // 1.5x line height
-  },
   inputContainer: {
     flexDirection: 'row',
     padding: 12,
-    borderTopWidth: 1,
+    borderTopWidth: 0.5,
     alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginBottom: Platform.OS === 'ios' ? 0 : 0,
+    zIndex: 10,
   },
   input: {
     flex: 1,
     padding: 12,
     borderRadius: 20,
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: 'IBMPlexSans_400Regular',
-    maxHeight: 100,
+    maxHeight: 80,
+    minHeight: 40,
+    paddingTop: 12,
+    paddingBottom: 5,
+    borderWidth: 0.5,
+    borderColor: 'rgba(0, 0, 0, 0.1)',
   },
   sendButton: {
     width: 40,
@@ -752,6 +1279,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.41,
+    elevation: 2,
   },
   modalOverlay: {
     flex: 1,
@@ -823,6 +1355,100 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     fontFamily: 'IBMPlexSans_400Regular',
+  },
+  loadingIndicatorContainer: {
+    padding: 12,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderBottomLeftRadius: 4,
+    maxWidth: '50%',
+    borderWidth: 1,
+    marginBottom: 16,
+    alignSelf: 'flex-start',
+  },
+  typingAnimation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 24,
+  },
+  typingDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    marginHorizontal: 2,
+  },
+  messageSuggestionsContainer: {
+    padding: 16,
+    marginBottom: 10,
+  },
+  suggestionsPrompt: {
+    fontSize: 16,
+    fontFamily: 'IBMPlexSans_600SemiBold',
+    marginBottom: 12,
+  },
+  messageSuggestionChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  messageSuggestionChip: {
+    padding: 12,
+    borderRadius: 8,
+    width: '48%',
+    marginBottom: 10,
+    alignItems: 'center',
+  },
+  messageSuggestionText: {
+    fontSize: 14,
+    fontFamily: 'IBMPlexSans_500Medium',
+    textAlign: 'center',
+  },
+  systemMessage: {
+    padding: 12,
+    borderRadius: 16,
+    maxWidth: '90%',
+    marginLeft: 'auto',
+    marginRight: 'auto',
+    marginVertical: 8,
+  },
+  systemMessageText: {
+    fontSize: 15,
+    fontFamily: 'IBMPlexSans_400Regular',
+    lineHeight: 22,
+  },
+  ayahMessage: {
+    padding: 16,
+    borderRadius: 16,
+    width: '95%',
+    marginLeft: 'auto',
+    marginRight: 'auto',
+    marginVertical: 12,
+    borderWidth: 1,
+  },
+  ayahMessageContent: {
+    flexDirection: 'column',
+  },
+  ayahArabicText: {
+    fontSize: 20,
+    fontFamily: 'IBMPlexSans_500Medium',
+    textAlign: 'right',
+    marginBottom: 12,
+    lineHeight: 32,
+  },
+  ayahTranslationText: {
+    fontSize: 14,
+    fontFamily: 'IBMPlexSans_400Regular',
+    lineHeight: 20,
+  },
+  optionalSurahPrompt: {
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  clearHistoryButton: {
+    padding: 8,
+    borderRadius: 8,
   },
 });
 
