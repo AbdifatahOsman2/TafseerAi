@@ -1,14 +1,19 @@
-import React from 'react';
-import { StyleSheet, Text, View, SafeAreaView, Switch, TouchableOpacity, StatusBar, ScrollView, Alert } from 'react-native';
+import React, { useContext, useState } from 'react';
+import { StyleSheet, Text, View, SafeAreaView, Switch, TouchableOpacity, StatusBar, ScrollView, Alert, Linking } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useReciter } from '../context/ReciterContext';
 import { useUser } from '../context/UserContext';
+import { getAuth, deleteUser } from 'firebase/auth';
+import { useFonts, IBMPlexSans_400Regular, IBMPlexSans_500Medium, IBMPlexSans_700Bold } from '@expo-google-fonts/ibm-plex-sans';
 
 const ProfileScreen = ({ navigation }) => {
   const { theme, isDarkMode, toggleTheme } = useTheme();
   const { selectedReciter } = useReciter();
-  const { user, isGuest, logout, exitGuestMode } = useUser();
+  const { user, isGuest, logout, setGuestMode } = useUser();
+  const auth = getAuth();
+
+  const PRIVACY_POLICY_URL = 'https://www.termsfeed.com/live/aa077d46-786f-4681-8390-b2e2ccf3a939';
 
   const handleLogout = () => {
     Alert.alert(
@@ -30,9 +35,90 @@ const ProfileScreen = ({ navigation }) => {
     );
   };
 
-  const handleSignIn = () => {
-    // This will trigger the AppNavigator to show the Auth screens
-    exitGuestMode();
+  const handleSignIn = async () => {
+    // Disable guest mode with the updated function
+    await setGuestMode(false);
+    
+    // Reset navigation to the root navigator which will show the Auth flow
+    // because we just set isGuest to false
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'Auth' }],
+    });
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to delete your account? This action cannot be undone.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const currentUser = auth.currentUser;
+              
+              if (currentUser) {
+                await deleteUser(currentUser);
+                // Log out the user after account deletion
+                handleLogout();
+                Alert.alert('Success', 'Your account has been deleted successfully.');
+              } else {
+                Alert.alert('Error', 'No user is currently signed in.');
+              }
+            } catch (error) {
+              console.error('Error deleting account:', error);
+              Alert.alert('Error', `Failed to delete account: ${error.message}`);
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
+  const openPrivacyPolicy = async () => {
+    try {
+      const canOpen = await Linking.canOpenURL(PRIVACY_POLICY_URL);
+      if (canOpen) {
+        await Linking.openURL(PRIVACY_POLICY_URL);
+      } else {
+        Alert.alert('Error', 'Cannot open the privacy policy. Please try again later.');
+      }
+    } catch (error) {
+      console.error('Error opening privacy policy:', error);
+      Alert.alert('Error', 'Could not open the privacy policy. Please try again later.');
+    }
+  };
+
+  const showLanguageOptions = () => {
+    Alert.alert(
+      'Language Selection',
+      'Please select a language:',
+      [
+        {
+          text: 'English (Current)',
+          onPress: () => console.log('English selected')
+        },
+        {
+          text: 'Arabic (Coming Soon)',
+          onPress: () => Alert.alert('Coming Soon', 'Arabic language support will be available in a future update.')
+        },
+        {
+          text: 'Somali (Coming Soon)',
+          onPress: () => Alert.alert('Coming Soon', 'Somali language support will be available in a future update.')
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        }
+      ]
+    );
   };
 
   return (
@@ -85,7 +171,10 @@ const ProfileScreen = ({ navigation }) => {
               />
             </View>
 
-            <TouchableOpacity style={styles.settingItem}>
+            <TouchableOpacity 
+              style={styles.settingItem}
+              onPress={showLanguageOptions}
+            >
               <View style={styles.settingInfo}>
                 <MaterialCommunityIcons name="translate" size={24} color={theme.PRIMARY} />
                 <Text style={[styles.settingText, { color: theme.TEXT_PRIMARY }]}>Language</Text>
@@ -109,15 +198,10 @@ const ProfileScreen = ({ navigation }) => {
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.settingItem}>
-              <View style={styles.settingInfo}>
-                <MaterialCommunityIcons name="bell-outline" size={24} color={theme.PRIMARY} />
-                <Text style={[styles.settingText, { color: theme.TEXT_PRIMARY }]}>Notifications</Text>
-              </View>
-              <MaterialCommunityIcons name="chevron-right" size={24} color={theme.TEXT_SECONDARY} />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.settingItem}>
+            <TouchableOpacity 
+              style={styles.settingItem}
+              onPress={openPrivacyPolicy}
+            >
               <View style={styles.settingInfo}>
                 <MaterialCommunityIcons name="help-circle-outline" size={24} color={theme.PRIMARY} />
                 <Text style={[styles.settingText, { color: theme.TEXT_PRIMARY }]}>Help & Support</Text>
@@ -135,13 +219,23 @@ const ProfileScreen = ({ navigation }) => {
               <Text style={[styles.actionButtonText, { color: theme.WHITE }]}>Sign In</Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity 
-              style={[styles.logoutButton, { backgroundColor: theme.SURFACE, borderColor: theme.BORDER }]}
-              onPress={handleLogout}
-            >
-              <MaterialCommunityIcons name="logout" size={20} color={theme.TEXT_SECONDARY} />
-              <Text style={[styles.logoutText, { color: theme.TEXT_SECONDARY }]}>Log Out</Text>
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity 
+                style={[styles.logoutButton, { backgroundColor: theme.SURFACE, borderColor: theme.BORDER }]}
+                onPress={handleLogout}
+              >
+                <MaterialCommunityIcons name="logout" size={20} color={theme.TEXT_SECONDARY} />
+                <Text style={[styles.logoutText, { color: theme.TEXT_SECONDARY }]}>Log Out</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.deleteAccountButton, { backgroundColor: theme.SURFACE, borderColor: theme.ERROR }]}
+                onPress={handleDeleteAccount}
+              >
+                <MaterialCommunityIcons name="account-remove" size={20} color={theme.ERROR} />
+                <Text style={[styles.deleteAccountText, { color: theme.ERROR }]}>Delete Account</Text>
+              </TouchableOpacity>
+            </>
           )}
         </View>
       </ScrollView>
@@ -277,6 +371,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   logoutText: {
+    fontSize: 16,
+    fontFamily: 'IBMPlexSans_500Medium',
+    marginLeft: 10,
+  },
+  deleteAccountButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 15,
+    borderRadius: 15,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    borderWidth: 1,
+  },
+  deleteAccountText: {
     fontSize: 16,
     fontFamily: 'IBMPlexSans_500Medium',
     marginLeft: 10,

@@ -12,12 +12,14 @@ import {
   Platform,
   TouchableWithoutFeedback,
   Keyboard,
-  Alert
+  Alert,
+  Image
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { useTheme } from '../context/ThemeContext';
 import { useUser } from '../context/UserContext';
+import { auth } from '../config/firebase';
 
 const LoginScreen = ({ navigation }) => {
   const { theme } = useTheme();
@@ -46,7 +48,6 @@ const LoginScreen = ({ navigation }) => {
     if (!validateForm()) return;
     
     setIsLoading(true);
-    const auth = getAuth();
     
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -76,12 +77,22 @@ const LoginScreen = ({ navigation }) => {
     }
   };
 
-  const handleContinueAsGuest = () => {
-    // Ensure we're in guest mode by explicitly setting it
-    setGuestMode();
-    
-    // This will force a re-render in the AppNavigator
-    // and since isGuest is true, it will show the MainApp (TabNavigator)
+  const handleContinueAsGuest = async () => {
+    try {
+      // Enable guest mode in the user context (now async)
+      await setGuestMode(true);
+      
+      // Explicitly navigate to MainApp
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'MainApp' }],
+      });
+    } catch (error) {
+      Alert.alert(
+        'Error',
+        'Failed to continue as guest. Please try again.'
+      );
+    }
   };
 
   return (
@@ -94,11 +105,18 @@ const LoginScreen = ({ navigation }) => {
           <StatusBar barStyle={theme.DARK ? 'light-content' : 'dark-content'} />
           
           <View style={styles.header}>
+            <View style={styles.logoContainer}>
+              <Image 
+                source={require('../assets/quran-image.png')}
+                style={styles.logo}
+                resizeMode="contain"
+              />
+            </View>
             <Text style={[styles.title, { color: theme.TEXT_PRIMARY }]}>
               Welcome to TafseerAI
             </Text>
             <Text style={[styles.subtitle, { color: theme.TEXT_SECONDARY }]}>
-              Sign in to continue
+              Sign in to explore the Quran
             </Text>
           </View>
           
@@ -176,38 +194,43 @@ const LoginScreen = ({ navigation }) => {
               )}
             </View>
             
-            <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
+            <TouchableOpacity 
+              style={styles.forgotPasswordContainer}
+              onPress={() => navigation.navigate('ForgotPassword')}
+            >
               <Text style={[styles.forgotPassword, { color: theme.PRIMARY }]}>
                 Forgot password?
               </Text>
             </TouchableOpacity>
             
-            <TouchableOpacity
-              style={[styles.loginButton, { backgroundColor: theme.PRIMARY }]}
-              onPress={handleLogin}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator color={theme.WHITE} />
-              ) : (
-                <Text style={[styles.loginButtonText, { color: theme.WHITE }]}>
-                  Sign In
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity
+                style={[styles.loginButton, { backgroundColor: theme.PRIMARY }]}
+                onPress={handleLogin}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color={theme.WHITE} />
+                ) : (
+                  <Text style={[styles.loginButtonText, { color: theme.WHITE }]}>
+                    Sign In
+                  </Text>
+                )}
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.guestButton, { 
+                  backgroundColor: theme.SURFACE,
+                  borderColor: theme.BORDER
+                }]}
+                onPress={handleContinueAsGuest}
+                disabled={isLoading}
+              >
+                <Text style={[styles.guestButtonText, { color: theme.TEXT_SECONDARY }]}>
+                  Continue as Guest
                 </Text>
-              )}
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[styles.guestButton, { 
-                backgroundColor: theme.SURFACE,
-                borderColor: theme.BORDER
-              }]}
-              onPress={handleContinueAsGuest}
-              disabled={isLoading}
-            >
-              <Text style={[styles.guestButtonText, { color: theme.TEXT_SECONDARY }]}>
-                Continue as Guest
-              </Text>
-            </TouchableOpacity>
+              </TouchableOpacity>
+            </View>
             
             <View style={styles.registerContainer}>
               <Text style={[styles.registerText, { color: theme.TEXT_SECONDARY }]}>
@@ -229,31 +252,49 @@ const LoginScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
+    padding: 30,
   },
   header: {
     marginTop: StatusBar.currentHeight || 40,
     marginBottom: 40,
+    alignItems: 'center',
+  },
+  logoContainer: {
+    width: 120,
+    height: 120,
+    marginBottom: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logo: {
+    width: '100%',
+    height: '100%',
   },
   title: {
     fontSize: 28,
     fontFamily: 'IBMPlexSans_700Bold',
-    marginBottom: 8,
+    marginBottom: 12,
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
     fontFamily: 'IBMPlexSans_400Regular',
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
   form: {
     flex: 1,
+    marginTop: 20,
+    alignItems: 'center',
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: 28,
+    width: '85%',
   },
   label: {
     fontSize: 14,
     fontFamily: 'IBMPlexSans_500Medium',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   inputContainer: {
     flexDirection: 'row',
@@ -264,13 +305,14 @@ const styles = StyleSheet.create({
   },
   inputIcon: {
     marginLeft: 16,
-    marginRight: 8,
+    marginRight: 12,
   },
   input: {
     flex: 1,
     height: '100%',
     fontFamily: 'IBMPlexSans_400Regular',
     fontSize: 16,
+    paddingVertical: 8,
   },
   visibilityIcon: {
     padding: 16,
@@ -278,20 +320,28 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 12,
     fontFamily: 'IBMPlexSans_400Regular',
-    marginTop: 4,
+    marginTop: 8,
+  },
+  forgotPasswordContainer: {
+    width: '85%',
+    alignItems: 'flex-end',
+    marginBottom: 36,
   },
   forgotPassword: {
     fontSize: 14,
     fontFamily: 'IBMPlexSans_500Medium',
-    textAlign: 'right',
-    marginBottom: 24,
+    paddingVertical: 4,
+  },
+  buttonContainer: {
+    width: '85%',
+    marginBottom: 40,
   },
   loginButton: {
     height: 56,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   loginButtonText: {
     fontSize: 16,
@@ -303,7 +353,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    marginBottom: 24,
   },
   guestButtonText: {
     fontSize: 16,
@@ -312,6 +361,7 @@ const styles = StyleSheet.create({
   registerContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
+    paddingVertical: 16,
   },
   registerText: {
     fontSize: 14,

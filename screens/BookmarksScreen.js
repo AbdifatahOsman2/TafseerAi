@@ -13,11 +13,13 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useUser } from '../context/UserContext';
 import * as Haptics from 'expo-haptics';
+import * as bookmarkService from '../services/bookmarkService';
 
 const BookmarksScreen = ({ navigation }) => {
   const { theme } = useTheme();
+  const { user, isGuest } = useUser();
   const [bookmarks, setBookmarks] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -28,65 +30,45 @@ const BookmarksScreen = ({ navigation }) => {
     });
 
     return unsubscribe;
-  }, [navigation]);
+  }, [navigation, user, isGuest]);
 
   const loadBookmarks = async () => {
     setLoading(true);
     try {
-      const bookmarksData = await AsyncStorage.getItem('bookmarkedAyahs');
-      if (bookmarksData) {
-        const parsedBookmarks = JSON.parse(bookmarksData);
-        // Sort by most recently added
-        const sortedBookmarks = parsedBookmarks.sort((a, b) => b.timestamp - a.timestamp);
-        setBookmarks(sortedBookmarks);
-      } else {
-        setBookmarks([]);
-      }
+      const loadedBookmarks = await bookmarkService.loadBookmarks(user, isGuest);
+      // Sort bookmarks by timestamp, newest first
+      const sortedBookmarks = loadedBookmarks.sort((a, b) => 
+        new Date(b.timestamp) - new Date(a.timestamp)
+      );
+      setBookmarks(sortedBookmarks);
     } catch (error) {
-      console.error('Error loading bookmarks:', error);
-      Alert.alert('Error', 'Could not load your bookmarks');
+      // Error handling without console.error
+      Alert.alert('Error', 'Failed to load bookmarks. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const removeBookmark = async (ayahId) => {
+  const removeBookmark = async (bookmarkToRemove) => {
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      // Ask for confirmation
-      Alert.alert(
-        'Remove Bookmark',
-        'Are you sure you want to remove this bookmark?',
-        [
-          {
-            text: 'Cancel',
-            style: 'cancel',
-          },
-          {
-            text: 'Remove',
-            onPress: async () => {
-              // Get current bookmarks
-              const bookmarksData = await AsyncStorage.getItem('bookmarkedAyahs');
-              if (bookmarksData) {
-                const currentBookmarks = JSON.parse(bookmarksData);
-                // Filter out the bookmark to remove
-                const updatedBookmarks = currentBookmarks.filter(
-                  bookmark => bookmark.id !== ayahId
-                );
-                // Save updated bookmarks
-                await AsyncStorage.setItem('bookmarkedAyahs', JSON.stringify(updatedBookmarks));
-                // Update state
-                setBookmarks(updatedBookmarks);
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              }
-            },
-            style: 'destructive',
-          },
-        ]
-      );
+      const success = await bookmarkService.removeBookmark(bookmarkToRemove, user, isGuest);
+      
+      if (success) {
+        const updatedBookmarks = bookmarks.filter(
+          bookmark => bookmark.id !== bookmarkToRemove.id && 
+                     bookmark.ayah.number !== bookmarkToRemove.ayah.number
+        );
+        
+        setBookmarks(updatedBookmarks);
+        
+        // Show success message
+        Alert.alert('Bookmark Removed', 'The bookmark has been successfully removed.');
+      } else {
+        throw new Error('Failed to remove bookmark');
+      }
     } catch (error) {
-      console.error('Error removing bookmark:', error);
-      Alert.alert('Error', 'Could not remove the bookmark');
+      // Error handling without console.error
+      Alert.alert('Error', 'Failed to remove bookmark. Please try again.');
     }
   };
 
@@ -105,21 +87,21 @@ const BookmarksScreen = ({ navigation }) => {
           backgroundColor: theme.SURFACE,
           borderColor: theme.BORDER
         }]}
-        onPress={() => navigateToSurah(item.surahNumber, item.numberInSurah)}
+        onPress={() => navigateToSurah(item.surah.number, item.ayah.numberInSurah)}
         activeOpacity={0.7}
       >
         <View style={styles.bookmarkHeader}>
           <View style={styles.surahInfo}>
             <Text style={[styles.surahName, { color: theme.TEXT_PRIMARY }]}>
-              {item.surahName} ({item.surahEnglishName})
+              {item.surah.name} ({item.surah.englishName})
             </Text>
             <Text style={[styles.ayahNumber, { color: theme.TEXT_SECONDARY }]}>
-              Ayah {item.numberInSurah}
+              Ayah {item.ayah.numberInSurah}
             </Text>
           </View>
           <TouchableOpacity
             style={styles.removeButton}
-            onPress={() => removeBookmark(item.id)}
+            onPress={() => removeBookmark(item)}
           >
             <MaterialCommunityIcons 
               name="bookmark-remove" 
@@ -131,11 +113,13 @@ const BookmarksScreen = ({ navigation }) => {
 
         <View style={styles.ayahContainer}>
           <Text style={[styles.arabicText, { color: theme.TEXT_PRIMARY }]}>
-            {item.arabicText}
+            {item.ayah.text}
           </Text>
-          <Text style={[styles.translationText, { color: theme.TEXT_SECONDARY }]}>
-            {item.translationText}
-          </Text>
+          {item.ayah.translation && (
+            <Text style={[styles.translationText, { color: theme.TEXT_SECONDARY }]}>
+              {item.ayah.translation}
+            </Text>
+          )}
         </View>
 
         {item.tafseerText && (

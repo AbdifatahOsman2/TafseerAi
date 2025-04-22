@@ -13,6 +13,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useIsFocused } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 
@@ -27,16 +28,33 @@ const ExploreScreen = ({ navigation }) => {
   }, []);
 
   const fetchSurahs = async () => {
+    setLoading(true);
     try {
       const response = await fetch('https://api.alquran.cloud/v1/surah');
       const data = await response.json();
+      
       if (data.code === 200) {
         setSurahs(data.data);
+        
+        // Store surahs in AsyncStorage for offline access
+        await AsyncStorage.setItem('surahs', JSON.stringify(data.data));
       } else {
-        console.error('Error fetching surahs:', data);
+        // Try to load from AsyncStorage if API fails
+        const storedSurahs = await AsyncStorage.getItem('surahs');
+        if (storedSurahs) {
+          setSurahs(JSON.parse(storedSurahs));
+        }
       }
     } catch (error) {
-      console.error('Error fetching surahs:', error);
+      // Try to load from AsyncStorage if offline
+      try {
+        const storedSurahs = await AsyncStorage.getItem('surahs');
+        if (storedSurahs) {
+          setSurahs(JSON.parse(storedSurahs));
+        }
+      } catch (offlineError) {
+        // Handle complete failure silently
+      }
     } finally {
       setLoading(false);
     }

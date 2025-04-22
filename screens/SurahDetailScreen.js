@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, createRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -11,6 +11,9 @@ import {
   Dimensions,
   Modal,
   Alert,
+  findNodeHandle,
+  PanResponder,
+  Animated,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
@@ -20,13 +23,16 @@ import { Audio } from 'expo-av';
 import { useReciter } from '../context/ReciterContext';
 import { fetchClassicalTafseer } from '../services/tafseerService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as bookmarkService from '../services/bookmarkService';
+import { useUser } from '../context/UserContext';
 
 const { width, height } = Dimensions.get('window');
 
 const SurahDetailScreen = ({ route, navigation }) => {
   const { theme } = useTheme();
-  const { surahNumber, surah } = route.params;
+  const { surahNumber, surah, scrollToAyah } = route.params;
   const { selectedReciter } = useReciter();
+  const { user, isGuest } = useUser();
   const [surahContent, setSurahContent] = useState(null);
   const [translations, setTranslations] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -39,28 +45,101 @@ const SurahDetailScreen = ({ route, navigation }) => {
   const [isSurahPlaying, setIsSurahPlaying] = useState(false);
   const [isSurahLoading, setIsSurahLoading] = useState(false);
   const surahSoundRef = useRef(null);
-  const [showClassicalTafseer, setShowClassicalTafseer] = useState(false);
-  const [showAITafseer, setShowAITafseer] = useState(false);
-  const [classicalTafseerContent, setClassicalTafseerContent] = useState('');
-  const [aiTafseerContent, setAiTafseerContent] = useState('');
-  const [isTafseerLoading, setIsTafseerLoading] = useState(false);
   const [currentAyahPlaying, setCurrentAyahPlaying] = useState(0);
   const [ayahsToPlay, setAyahsToPlay] = useState([]);
+  const scrollViewRef = useRef(null);
+  const ayahRefs = useRef({});
+  // Flag to track if we need to scroll to an ayah after content loads
+  const [shouldScrollToAyah, setShouldScrollToAyah] = useState(scrollToAyah ? true : false);
+  const [isTafseerLoading, setIsTafseerLoading] = useState(false);
+
+  // Modal animation states
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const modalOpacity = useRef(new Animated.Value(0)).current;
+  
+  // PanResponder for slide-down gesture
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        // Only handle vertical swipes
+        return Math.abs(gestureState.dy) > Math.abs(gestureState.dx * 3);
+      },
+      onPanResponderMove: (_, gestureState) => {
+        // Only allow downward movement (positive dy)
+        if (gestureState.dy > 0) {
+          slideAnim.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        // If dragged down more than 100px or with velocity > 0.3, close the modal
+        if (gestureState.dy > 100 || gestureState.vy > 0.3) {
+          closeMenu();
+        } else {
+          // Otherwise, spring back to original position
+          Animated.spring(slideAnim, {
+            toValue: 0,
+            tension: 65,
+            friction: 8,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+    })
+  ).current;
 
   // Define Bismillah text for display purposes
   const BISMILLAH = "بِسۡمِ ٱللَّهِ ٱلرَّحۡمَـٰنِ ٱلرَّحِیمِ";
 
+  // Format reciter ID for API URLs
+  const formatReciterId = (reciterId) => {
+    // Add 'ar.' prefix if needed and handle null cases
+    if (!reciterId) return 'ar.alafasy'; // Default fallback
+
+    // If ID already has language prefix, return as is
+    if (reciterId.includes('.')) return reciterId;
+
+    // For English reciter 'walk'
+    if (reciterId === 'walk') return 'en.walk';
+    
+    // For Arabic reciters
+    return `ar.${reciterId}`;
+  };
+
+  // Safe reciter ID that will always have a valid value
+  const reciterId = selectedReciter?.id || 'alafasy'; // Default to Alafasy if ID is missing
+
+  // Log available reciter information
+  useEffect(() => {
+    console.log("SurahDetailScreen - Reciter info:", 
+      selectedReciter ? `${selectedReciter.name} (${selectedReciter.id})` : "none", 
+      "Formatted ID:", formatReciterId(reciterId));
+  }, [selectedReciter]);
+
   useEffect(() => {
     fetchSurahContent(surahNumber);
     
-    // Initialize audio
-    Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      staysActiveInBackground: true,
-      playsInSilentModeIOS: true,
-      shouldDuckAndroid: true,
-      playThroughEarpieceAndroid: false,
-    });
+    // Initialize audio with more detailed error handling
+    const setupAudio = async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          staysActiveInBackground: true,
+          playsInSilentModeIOS: true,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+        });
+        console.log("Audio mode set successfully");
+      } catch (error) {
+        console.error("Error setting audio mode:", error);
+        Alert.alert(
+          "Audio Setup Error", 
+          "There was a problem initializing the audio. Please restart the app."
+        );
+      }
+    };
+    
+    setupAudio();
     
     // Cleanup function to unload sound when component unmounts
     return () => {
@@ -72,6 +151,85 @@ const SurahDetailScreen = ({ route, navigation }) => {
       }
     };
   }, [surahNumber]);
+
+  // Effect to scroll to a specific ayah if requested
+  useEffect(() => {
+    if (!loading && shouldScrollToAyah && scrollToAyah && surahContent) {
+      // Use a longer delay to ensure all ayahs are rendered and measured
+      const timer = setTimeout(() => {
+        scrollToAyahNumber(parseInt(scrollToAyah, 10));
+        // Reset the flag to avoid scrolling again
+        setShouldScrollToAyah(false);
+      }, 1000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [loading, shouldScrollToAyah, scrollToAyah, surahContent]);
+
+  // Function to scroll to a specific ayah
+  const scrollToAyahNumber = (ayahNumber) => {
+    // Ensure ayahNumber is a number
+    const ayahNum = parseInt(ayahNumber, 10);
+    
+    if (isNaN(ayahNum)) {
+      return;
+    }
+    
+    if (ayahRefs.current[ayahNum] && scrollViewRef.current) {
+      // Get the y position and scroll with extra offset for the header
+      const yPosition = ayahRefs.current[ayahNum];
+      
+      scrollViewRef.current.scrollTo({
+        y: yPosition - 70, // Subtract header height for better positioning
+        animated: true,
+      });
+      
+      // Flash the ayah
+      highlightAyah(ayahNum);
+    } else {
+      // Fallback: if we can't find the exact ayah, try scrolling to an approximate position
+      if (surahContent && surahContent.ayahs) {
+        const totalAyahs = surahContent.numberOfAyahs;
+        const scrollPosition = (ayahNum / totalAyahs) * 5000; // Rough estimate
+        
+        scrollViewRef.current?.scrollTo({
+          y: scrollPosition,
+          animated: true,
+        });
+      }
+    }
+  };
+
+  // Function to highlight an ayah briefly
+  const highlightAyah = (ayahNumber) => {
+    // Find the ayah object
+    const targetAyah = surahContent?.ayahs?.find(a => a.numberInSurah === ayahNumber);
+    if (targetAyah) {
+      // Flash the ayah by briefly selecting it
+      setSelectedAyah(targetAyah);
+      
+      // Then close the modal after a short delay
+      setTimeout(() => {
+        setSelectedAyah(null);
+      }, 800);
+    }
+  };
+
+  // Function to measure and store the ayah position
+  const measureAyahPosition = (ayahNumber, y) => {
+    // Ensure ayahNumber is stored as a number
+    const ayahNum = parseInt(ayahNumber, 10);
+    ayahRefs.current[ayahNum] = y;
+    
+    // If this is the ayah we need to scroll to and we haven't scrolled yet, do it now
+    if (shouldScrollToAyah && scrollToAyah && parseInt(scrollToAyah, 10) === ayahNum) {
+      // Add a small delay to ensure measurement is complete
+      setTimeout(() => {
+        scrollToAyahNumber(ayahNum);
+        setShouldScrollToAyah(false);
+      }, 100);
+    }
+  };
 
   const fetchSurahContent = async (number) => {
     setLoading(true);
@@ -93,10 +251,16 @@ const SurahDetailScreen = ({ route, navigation }) => {
         let processedArabicData = { ...arabicData.data };
         let processedTranslationData = { ...translationData.data };
         
+        // Add the surah number to each ayah
+        if (processedArabicData.ayahs && processedArabicData.ayahs.length > 0) {
+          processedArabicData.ayahs = processedArabicData.ayahs.map(ayah => ({
+            ...ayah,
+            surah: number  // Add the surah number to each ayah
+          }));
+        }
+        
         // Don't modify Al-Fatiha or At-Tawbah
         if (number !== 1 && number !== 9 && processedArabicData.ayahs && processedArabicData.ayahs.length > 0) {
-          console.log("====== Processing Surah", number, "======");
-          
           // First, print the original text for debugging
           const firstAyah = processedArabicData.ayahs[0];
           
@@ -175,67 +339,117 @@ const SurahDetailScreen = ({ route, navigation }) => {
         setSurahContent(processedArabicData);
         setTranslations(processedTranslationData);
         setShowBismillah(shouldDisplayBismillah);
-      } else {
-        console.error('Error fetching surah content:', arabicData, translationData);
       }
     } catch (error) {
-      console.error('Error fetching surah content:', error);
+      // Error handling without console.error
     } finally {
       setLoading(false);
     }
   };
 
-  // Function to play ayah audio
+  // Function to play ayah audio with improved error handling
   const playAyahAudio = async (ayah) => {
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setIsLoading(true);
       
-      // Stop surah audio if playing
-      if (surahSoundRef.current) {
-        await surahSoundRef.current.unloadAsync();
-        setIsSurahPlaying(false);
-        setCurrentAyahPlaying(0);
-        setAyahsToPlay([]);
-      }
-      
-      // Unload any existing ayah sound
       if (soundRef.current) {
         await soundRef.current.unloadAsync();
       }
       
-      // Get the audio URL for the ayah directly from the API
-      const responseUrl = `https://api.alquran.cloud/v1/ayah/${ayah.number}/${selectedReciter.id}`;
-      console.log(`Fetching ayah audio from API: ${responseUrl}`);
+      // Format the formatted reciter ID for the URL
+      const formattedReciterId = formatReciterId(reciterId);
       
-      const response = await fetch(responseUrl);
-      const data = await response.json();
+      console.log(`Playing ayah ${ayah.number} with reciter ${formattedReciterId}`);
       
-      if (data.code === 200 && data.data && data.data.audio) {
-        // Get the direct audio URL
-        const audioUrl = data.data.audio;
-        console.log(`Playing ayah from URL: ${audioUrl}`);
-        
-        // Create a new sound object
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: audioUrl },
-          { shouldPlay: true }
-        );
-        
-        soundRef.current = sound;
-        setIsPlaying(true);
-        
-        // When playback finishes
-        sound.setOnPlaybackStatusUpdate((status) => {
-          if (status.didJustFinish) {
-            setIsPlaying(false);
+      // Set up multiple URL formats to try
+      const urls = [
+        // Primary API URL
+        `https://api.alquran.cloud/v1/ayah/${ayah.number}/${formattedReciterId}`,
+        // Direct CDN URL with bitrate
+        `https://cdn.islamic.network/quran/audio/128/${formattedReciterId}/${ayah.number}.mp3`,
+        // Direct CDN URL without bitrate
+        `https://cdn.islamic.network/quran/audio/${formattedReciterId}/${ayah.number}.mp3`,
+        // Alquran.cloud format
+        `https://cdn.alquran.cloud/media/audio/ayah/${formattedReciterId}/${ayah.number}`
+      ];
+      
+      console.log('Trying ayah URLs:', urls);
+      
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+        shouldDuckAndroid: true,
+      });
+      
+      // Try each URL in sequence until one works
+      let success = false;
+      let error = null;
+      
+      for (let i = 0; i < urls.length; i++) {
+        try {
+          const url = urls[i];
+          console.log(`Attempting to play ayah from: ${url}`);
+          
+          // If it's an API URL, fetch the actual audio URL first
+          if (url.includes('/v1/ayah/')) {
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.code === 200 && data.data && data.data.audio) {
+              const audioUrl = data.data.audio;
+              console.log("Successfully got ayah audio URL:", audioUrl);
+              
+              const { sound } = await Audio.Sound.createAsync(
+                { uri: audioUrl },
+                { shouldPlay: true },
+                status => {
+                  if (status.didJustFinish) {
+                    setIsPlaying(false);
+                    setIsLoading(false);
+                  }
+                }
+              );
+              
+              soundRef.current = sound;
+              setIsPlaying(true);
+              success = true;
+              break;
+            }
+          } else {
+            // Direct audio URL
+            const { sound } = await Audio.Sound.createAsync(
+              { uri: url },
+              { shouldPlay: true },
+              status => {
+                if (status.didJustFinish) {
+                  setIsPlaying(false);
+                  setIsLoading(false);
+                }
+              }
+            );
+            
+            soundRef.current = sound;
+            setIsPlaying(true);
+            success = true;
+            break;
           }
-        });
-      } else {
-        throw new Error("Failed to get audio URL from API");
+        } catch (urlError) {
+          console.log(`Error with ayah URL ${urls[i]}:`, urlError);
+          error = urlError;
+          // Continue to the next URL
+        }
+      }
+      
+      if (!success) {
+        throw error || new Error('All ayah audio sources failed');
       }
     } catch (error) {
-      console.error('Error playing ayah audio:', error);
+      console.error("Final error in playAyahAudio:", error);
+      Alert.alert(
+        'Audio Playback Error', 
+        `Unable to play ayah audio with the selected reciter (${reciterId}). Please try another reciter or check your internet connection.`
+      );
+      setIsPlaying(false);
     } finally {
       setIsLoading(false);
     }
@@ -243,343 +457,558 @@ const SurahDetailScreen = ({ route, navigation }) => {
 
   // Helper function to play the next ayah in the queue
   const playNextAyah = async () => {
-    if (ayahsToPlay.length === 0 || currentAyahPlaying >= ayahsToPlay.length) {
-      // We've finished playing all ayahs
-      setIsSurahPlaying(false);
-      setCurrentAyahPlaying(0);
-      setAyahsToPlay([]);
+    if (!surahContent || !surahContent.ayahs || currentAyahPlaying === null) return;
+    
+    const nextAyahIndex = currentAyahPlaying + 1;
+    if (nextAyahIndex >= surahContent.ayahs.length) {
+      console.log('End of surah reached');
+      setIsPlaying(false);
+      setCurrentAyahPlaying(null);
       return;
     }
     
+    const nextAyah = surahContent.ayahs[nextAyahIndex];
+    const nextAyahNumber = nextAyah.number;
+    
     try {
-      // Unload any existing sound
-      if (surahSoundRef.current) {
-        await surahSoundRef.current.unloadAsync();
+      setIsLoading(true);
+      
+      // Format the reciter ID for the URL
+      const formattedReciterId = formatReciterId(reciterId);
+      
+      console.log(`Playing next ayah ${nextAyahNumber} with reciter ${formattedReciterId}`);
+      
+      // Set up multiple URL formats to try
+      const urls = [
+        // Primary API URL
+        `https://api.alquran.cloud/v1/ayah/${nextAyahNumber}/${formattedReciterId}`,
+        // Direct CDN URL with bitrate
+        `https://cdn.islamic.network/quran/audio/128/${formattedReciterId}/${nextAyahNumber}.mp3`,
+        // Direct CDN URL without bitrate
+        `https://cdn.islamic.network/quran/audio/${formattedReciterId}/${nextAyahNumber}.mp3`,
+        // Alquran.cloud format
+        `https://cdn.alquran.cloud/media/audio/ayah/${formattedReciterId}/${nextAyahNumber}`
+      ];
+      
+      console.log('Trying next ayah URLs:', urls);
+      
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+        shouldDuckAndroid: true,
+      });
+      
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync();
       }
       
-      const currentAyahIndex = currentAyahPlaying;
-      const ayahToPlay = ayahsToPlay[currentAyahIndex];
+      // Try each URL in sequence until one works
+      let success = false;
       
-      console.log(`Playing ayah ${currentAyahIndex + 1}/${ayahsToPlay.length} - global number: ${ayahToPlay}`);
-      
-      // Use the CDN URL format
-      const bitrate = '128';
-      const reciterId = selectedReciter.id;
-      const url = `https://cdn.islamic.network/quran/audio/${bitrate}/${reciterId}/${ayahToPlay}.mp3`;
-      
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: url },
-        { shouldPlay: true }
-      );
-      
-      surahSoundRef.current = sound;
-      
-      // When playback finishes or encounters an error
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.didJustFinish) {
-          // Move to the next ayah
-          setCurrentAyahPlaying(current => current + 1);
-        } else if (status.error) {
-          console.error(`Error playing ayah ${ayahToPlay}:`, status.error);
-          // Skip to next ayah on error
-          setCurrentAyahPlaying(current => current + 1);
+      for (let i = 0; i < urls.length; i++) {
+        try {
+          const url = urls[i];
+          console.log(`Attempting to play next ayah from: ${url}`);
+          
+          // If it's an API URL, fetch the actual audio URL first
+          if (url.includes('/v1/ayah/')) {
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.code === 200 && data.data && data.data.audio) {
+              const audioUrl = data.data.audio;
+              console.log("Successfully got next ayah audio URL:", audioUrl);
+              
+              const { sound } = await Audio.Sound.createAsync(
+                { uri: audioUrl },
+                { shouldPlay: true },
+                (status) => {
+                  if (status.didJustFinish) {
+                    if (isPlaying) {
+                      playNextAyah();
+                    }
+                  }
+                }
+              );
+              
+              soundRef.current = sound;
+              setCurrentAyahPlaying(nextAyahIndex);
+              setSelectedAyah(nextAyah);
+              success = true;
+              break;
+            }
+          } else {
+            // Direct audio URL
+            const { sound } = await Audio.Sound.createAsync(
+              { uri: url },
+              { shouldPlay: true },
+              (status) => {
+                if (status.didJustFinish) {
+                  if (isPlaying) {
+                    playNextAyah();
+                  }
+                }
+              }
+            );
+            
+            soundRef.current = sound;
+            setCurrentAyahPlaying(nextAyahIndex);
+            setSelectedAyah(nextAyah);
+            success = true;
+            break;
+          }
+        } catch (urlError) {
+          console.log(`Error with next ayah URL ${urls[i]}:`, urlError);
+          // Continue to the next URL
         }
-      });
+      }
+      
+      if (!success) {
+        throw new Error('All next ayah audio sources failed');
+      }
+      
     } catch (error) {
-      console.error('Error in playNextAyah:', error);
-      // Skip to next ayah on error
-      setCurrentAyahPlaying(current => current + 1);
+      console.error('Error playing next ayah:', error);
+      Alert.alert(
+        'Audio Playback Error',
+        `Unable to play sequence with the selected reciter (${reciterId}). Please try another reciter.`
+      );
+      setIsPlaying(false);
+    } finally {
+      setIsLoading(false);
     }
   };
   
-  // Watch for changes to currentAyahPlaying to play the next ayah
+  // Watch for changes to currentAyahPlaying to play the next ayah in sequence
   useEffect(() => {
-    if (isSurahPlaying && ayahsToPlay.length > 0) {
-      playNextAyah();
+    // Only respond to changes when sequential surah playback is active
+    if (isSurahPlaying && currentAyahPlaying > 0 && currentAyahPlaying < surahContent?.ayahs?.length) {
+      console.log("Triggering play of next ayah:", currentAyahPlaying);
+      
+      // Play the next ayah in the sequence
+      const nextAyah = surahContent.ayahs[currentAyahPlaying];
+      
+      // Auto-scroll to the current ayah if we have its position
+      if (scrollViewRef.current && ayahRefs.current[nextAyah.numberInSurah]) {
+        scrollViewRef.current.scrollTo({
+          y: ayahRefs.current[nextAyah.numberInSurah] - 150, // Adjust for header
+          animated: true
+        });
+      }
+      
+      // Slight delay to ensure previous sound is properly unloaded
+      setTimeout(() => {
+        playAyahInSequence(nextAyah).catch(error => {
+          console.error("Failed to play next ayah in sequence:", error);
+          // If we fail to play this ayah, try moving to the next one
+          if (currentAyahPlaying + 1 < surahContent.ayahs.length) {
+            setCurrentAyahPlaying(currentAyahPlaying + 1);
+          } else {
+            // End of surah or too many failures
+            setIsSurahPlaying(false);
+            setCurrentAyahPlaying(0);
+            setAyahsToPlay([]);
+          }
+        });
+      }, 300);
     }
   }, [currentAyahPlaying, isSurahPlaying]);
 
   // Function to stop playing
   const stopAyahAudio = async () => {
     if (soundRef.current) {
-      await soundRef.current.stopAsync();
-      setIsPlaying(false);
+      try {
+        await soundRef.current.stopAsync();
+        await soundRef.current.unloadAsync();
+        soundRef.current = null;
+      } catch (error) {
+        // Just reset the UI state and ignore the error
+      }
     }
+    setIsPlaying(false);
   };
 
-  // Function to play entire surah audio
+  // Function to play entire surah audio with improved error handling
   const playSurahAudio = async () => {
+    if (!surahContent || !surahContent.ayahs) return;
+    
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setIsSurahLoading(true);
       
-      // Stop ayah audio if playing
-      if (soundRef.current) {
-        await soundRef.current.unloadAsync();
-        setIsPlaying(false);
-      }
+      // Format the reciter ID for the URL
+      const formattedReciterId = formatReciterId(reciterId);
       
-      // Unload any existing surah sound
-      if (surahSoundRef.current) {
-        await surahSoundRef.current.unloadAsync();
-      }
+      console.log(`Playing surah ${surahNumber} with reciter ${formattedReciterId} using sequential ayah playback`);
       
-      // Fall back to CDN approach for more reliable playback
-      // We'll use a pre-calculated list of global ayah numbers for all 114 surahs
-      const surahStartingPositions = [
-        1, 8, 294, 494, 670, 790, 955, 1161, 1236, 1365, 1474, 1597, 1708, 1751, 1803, 1902, 2030, 2141, 
-        2251, 2349, 2484, 2596, 2674, 2792, 2856, 2933, 3160, 3253, 3341, 3410, 3470, 3504, 3534, 3607, 
-        3661, 3706, 3789, 3971, 4059, 4134, 4219, 4273, 4326, 4415, 4474, 4511, 4546, 4584, 4613, 4631, 
-        4676, 4736, 4785, 4835, 4876, 4930, 4981, 5030, 5062, 5105, 5142, 5172, 5220, 5242, 5272, 5324, 
-        5376, 5420, 5448, 5476, 5496, 5552, 5592, 5623, 5673, 5713, 5759, 5801, 5830, 5849, 5885, 5910, 
-        5932, 5949, 5968, 5994, 6024, 6044, 6059, 6080, 6091, 6099, 6107, 6126, 6131, 6139, 6147, 6158, 
-        6169, 6177, 6180, 6189, 6194, 6198, 6205, 6208, 6214, 6217, 6222, 6226, 6231, 6234
-      ];
+      // Setup ayah-by-ayah playback for all reciters
+      const allAyahs = surahContent.ayahs;
+      setAyahsToPlay([...allAyahs]);
       
-      // Generate the list of all global ayah numbers for this surah
-      const startingIndex = surahStartingPositions[surahNumber - 1] || 1;
-      const numberOfAyahs = surahContent.numberOfAyahs || 1;
-      
-      // Calculate the ending index (exclusive)
-      let endingIndex;
-      if (surahNumber < 114) {
-        endingIndex = surahStartingPositions[surahNumber]; // Next surah's starting index
-      } else {
-        endingIndex = 6237; // After the last ayah of the Quran
-      }
-      
-      // Create array of all ayah numbers to play
-      const ayahNumbers = [];
-      for (let i = startingIndex; i < endingIndex; i++) {
-        ayahNumbers.push(i);
-      }
-      
-      setAyahsToPlay(ayahNumbers);
+      // Reset currentAyahPlaying to start with first ayah
       setCurrentAyahPlaying(0);
-      setIsSurahPlaying(true);
+      
+      // Give a slight delay before starting the sequence
+      setTimeout(async () => {
+        try {
+          // Play the first ayah
+          if (allAyahs && allAyahs.length > 0) {
+            const firstAyah = allAyahs[0];
+            await playAyahInSequence(firstAyah);
+            // After first ayah is playing, increment the counter to trigger the next ayah
+            setCurrentAyahPlaying(1);
+            setIsSurahPlaying(true);
+          }
+        } catch (sequenceError) {
+          console.log("Error starting ayah sequence:", sequenceError);
+          Alert.alert(
+            'Audio Error',
+            `Unable to play audio with the selected reciter (${reciterId}). Please try another reciter or check your internet connection.`
+          );
+          setIsSurahPlaying(false);
+        }
+      }, 300);
       
     } catch (error) {
-      console.error('Error setting up surah audio:', error);
+      console.error('Error in playSurahAudio:', error);
       setIsSurahPlaying(false);
-      
-      // Show error message to user
       Alert.alert(
-        "Playback Error",
-        "There was an error playing the surah audio. Please try again or select a different reciter.",
-        [{ text: "OK" }]
+        'Audio Error',
+        `Unable to play audio with the selected reciter (${reciterId}). Please try another reciter or check your internet connection.`
       );
     } finally {
       setIsSurahLoading(false);
     }
   };
 
-  // Function to stop surah audio
+  // Helper function to play an ayah when in sequence mode
+  const playAyahInSequence = async (ayah) => {
+    try {
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync();
+      }
+      
+      // Format the reciter ID for the URL
+      const formattedReciterId = formatReciterId(reciterId);
+      
+      // Setup multiple URL formats to try
+      const urls = [
+        // Primary API URL
+        `https://api.alquran.cloud/v1/ayah/${ayah.number}/${formattedReciterId}`,
+        // Direct CDN URL with bitrate
+        `https://cdn.islamic.network/quran/audio/128/${formattedReciterId}/${ayah.number}.mp3`,
+        // Direct CDN URL without bitrate
+        `https://cdn.islamic.network/quran/audio/${formattedReciterId}/${ayah.number}.mp3`,
+        // Alquran.cloud format
+        `https://cdn.alquran.cloud/media/audio/ayah/${formattedReciterId}/${ayah.number}`
+      ];
+      
+      console.log(`Playing ayah ${ayah.numberInSurah} in sequence`);
+      
+      // Try each URL in sequence until one works
+      let success = false;
+      
+      for (let i = 0; i < urls.length; i++) {
+        try {
+          const url = urls[i];
+          
+          // If it's an API URL, fetch the actual audio URL first
+          if (url.includes('/v1/ayah/')) {
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.code === 200 && data.data && data.data.audio) {
+              const audioUrl = data.data.audio;
+              
+              const { sound } = await Audio.Sound.createAsync(
+                { uri: audioUrl },
+                { shouldPlay: true },
+                onPlaybackStatusUpdate
+              );
+              
+              soundRef.current = sound;
+              success = true;
+              break;
+            }
+          } else {
+            // Direct audio URL
+            const { sound } = await Audio.Sound.createAsync(
+              { uri: url },
+              { shouldPlay: true },
+              onPlaybackStatusUpdate
+            );
+            
+            soundRef.current = sound;
+            success = true;
+            break;
+          }
+        } catch (urlError) {
+          // Continue to the next URL
+        }
+      }
+      
+      if (!success) {
+        throw new Error(`Failed to play ayah ${ayah.numberInSurah} in sequence`);
+      }
+    } catch (error) {
+      console.error('Error in playAyahInSequence:', error);
+      throw error;
+    }
+  };
+
+  // Function to handle playback status updates
+  const onPlaybackStatusUpdate = (status) => {
+    if (status.didJustFinish && isSurahPlaying) {
+      console.log("Ayah finished, moving to next one. Current index:", currentAyahPlaying);
+      
+      // Move to the next ayah
+      const nextAyahIndex = currentAyahPlaying + 1;
+      
+      if (nextAyahIndex < surahContent?.ayahs?.length) {
+        // Set the current ayah index which will trigger the useEffect to play the next ayah
+        setCurrentAyahPlaying(nextAyahIndex);
+      } else {
+        // End of surah reached
+        console.log("End of surah reached");
+        setIsSurahPlaying(false);
+        setCurrentAyahPlaying(0);
+        setAyahsToPlay([]);
+      }
+    }
+  };
+
   const stopSurahAudio = async () => {
-    if (surahSoundRef.current) {
-      await surahSoundRef.current.stopAsync();
+    try {
+      // Stop the full surah audio if it's playing
+      if (surahSoundRef.current) {
+        await surahSoundRef.current.stopAsync();
+        await surahSoundRef.current.unloadAsync();
+        surahSoundRef.current = null;
+      }
+      
+      // Also stop any sequential ayah audio that might be playing
+      if (soundRef.current) {
+        await soundRef.current.stopAsync();
+        await soundRef.current.unloadAsync();
+        soundRef.current = null;
+      }
+      
       setIsSurahPlaying(false);
       setCurrentAyahPlaying(0);
       setAyahsToPlay([]);
+    } catch (error) {
+      console.error('Error stopping surah audio:', error);
     }
   };
 
   const handlePress = (ayah) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setSelectedAyah(ayah);
+    showMenu(ayah);
   };
 
   const closeMenu = () => {
-    // Stop any playing audio when closing the menu
-    if (soundRef.current) {
-      stopAyahAudio();
-    }
-    
-    // Reset tafseer states
-    setShowClassicalTafseer(false);
-    setShowAITafseer(false);
-    setClassicalTafseerContent('');
-    setAiTafseerContent('');
-    
-    // Close the modal
-    setSelectedAyah(null);
-  };
-
-  const handleAiTafseer = (ayah) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // Navigate to TafseerScreen with the selected ayah context
-    closeMenu();
-    
-    // Create a complete surah object with all necessary properties
-    const fullSurahObject = {
-      number: surahNumber,
-      name: surahContent.name,
-      englishName: surahContent.englishName,
-      numberOfAyahs: surahContent.numberOfAyahs,
-      revelationType: surahContent.revelationType,
-      englishNameTranslation: surahContent.englishNameTranslation
-    };
-    
-    // Navigate to the TafseerScreen with surah and ayah information
-    navigation.navigate('Tafseer', {
-      surah: fullSurahObject,
-      ayah: {
-        number: ayah.number,
-        numberInSurah: ayah.numberInSurah,
-        text: ayah.text,
-        translation: translations?.ayahs.find(t => t.numberInSurah === ayah.numberInSurah)?.text || ''
-      },
-      mode: 'ai', // Default to AI mode
-      initialQuestion: `Could you explain the meaning of Surah ${surahNumber}, Ayah ${ayah.numberInSurah}?` // Prefill a question
+    // Animate the modal closing
+    Animated.parallel([
+      Animated.timing(slideAnim, {
+        toValue: height, // Use screen height for more natural feeling
+        duration: 250,
+        useNativeDriver: true,
+      }),
+      Animated.timing(modalOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      // Reset values for next opening
+      slideAnim.setValue(height);
+      // Clear states
+      setSelectedAyah(null);
+      setShowClassicalTafseer(false);
     });
   };
 
-  const handleBookmark = async (ayah) => {
+  const showMenu = (ayah) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedAyah(ayah);
     
+    // Reset animation values before animating
+    slideAnim.setValue(height);
+    modalOpacity.setValue(0);
+    
+    // Animate the modal opening
+    Animated.parallel([
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 50,
+        friction: 7,
+        useNativeDriver: true,
+      }),
+      Animated.timing(modalOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const handleBookmark = async (ayah) => {
     try {
-      // First get the translation for this ayah
-      const translation = translations?.ayahs.find(t => t.numberInSurah === ayah.numberInSurah)?.text || '';
+      // Find matching translation
+      const translation = translations?.ayahs.find(t => 
+        t.numberInSurah === ayah.numberInSurah
+      );
       
-      // If we've loaded the classical tafseer for this ayah, include it in the bookmark
-      let tafseerText = null;
-      if (selectedAyah && selectedAyah.numberInSurah === ayah.numberInSurah && classicalTafseerContent) {
-        // We have the tafseer loaded, so include it in the bookmark
-        tafseerText = classicalTafseerContent;
-      }
-      
-      // Create bookmark object
-      const bookmarkData = {
-        id: `${surahNumber}-${ayah.numberInSurah}`,
-        surahNumber: surahNumber,
-        surahName: surahContent.name,
-        surahEnglishName: surahContent.englishName,
-        numberInSurah: ayah.numberInSurah,
-        arabicText: ayah.text,
-        translationText: translation,
-        tafseerText: tafseerText,
-        timestamp: Date.now()
+      // Add the surah info to the bookmark
+      const bookmark = {
+        ayah: {
+          ...ayah,
+          text: ayah.text,
+          translation: translation ? translation.text : null,
+        },
+        surah: {
+          name: surahContent.name,
+          englishName: surahContent.englishName,
+          number: surahContent.number,
+        },
+        timestamp: new Date().toISOString(),
       };
       
-      // Get existing bookmarks or initialize empty array
-      const existingBookmarksJSON = await AsyncStorage.getItem('bookmarkedAyahs');
-      let bookmarks = [];
+      // Check if this ayah is already bookmarked
+      const isAlreadyBookmarked = await bookmarkService.isBookmarked(
+        ayah, 
+        surahContent.number, 
+        user, 
+        isGuest
+      );
       
-      if (existingBookmarksJSON) {
-        bookmarks = JSON.parse(existingBookmarksJSON);
-        
-        // Check if this ayah is already bookmarked
-        const isAlreadyBookmarked = bookmarks.some(bookmark => bookmark.id === bookmarkData.id);
-        
-        if (isAlreadyBookmarked) {
-          // Show message that it's already bookmarked
-          Alert.alert(
-            'Already Bookmarked',
-            'This ayah is already in your bookmarks.',
-            [{ text: 'OK' }]
-          );
-          closeMenu();
-          return;
+      let success;
+      
+      if (isAlreadyBookmarked) {
+        // Remove from bookmarks if already exists
+        success = await bookmarkService.removeBookmark(bookmark, user, isGuest);
+        if (success) {
+          Alert.alert('Bookmark Removed', 'Ayah has been removed from your bookmarks.');
+        }
+      } else {
+        // Add to bookmarks
+        success = await bookmarkService.saveBookmark(bookmark, user, isGuest);
+        if (success) {
+          Alert.alert('Bookmark Added', 'Ayah has been added to your bookmarks.');
         }
       }
       
-      // Add new bookmark to the array
-      bookmarks.push(bookmarkData);
+      if (!success) {
+        throw new Error('Failed to update bookmark');
+      }
       
-      // Save updated bookmarks
-      await AsyncStorage.setItem('bookmarkedAyahs', JSON.stringify(bookmarks));
-      
-      // Provide feedback
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert(
-        'Bookmark Added',
-        'Ayah has been added to your bookmarks.',
-        [{ text: 'OK' }]
-      );
+      // Close the menu
+      closeMenu();
     } catch (error) {
-      console.error('Error bookmarking ayah:', error);
-      Alert.alert(
-        'Error',
-        'Could not bookmark this ayah. Please try again.',
-        [{ text: 'OK' }]
-      );
+      // Error handling without console.error
+      Alert.alert('Error', 'Failed to update bookmarks. Please try again.');
     }
-    
-    closeMenu();
   };
 
   const handleClassicalTafseerToggle = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // If we're showing tafseer and user taps, just hide it
+    if (showClassicalTafseer) {
+      setShowClassicalTafseer(false);
+      return;
+    }
     
-    // Toggle the visibility
-    setShowClassicalTafseer(!showClassicalTafseer);
+    // Otherwise, fetch and show tafseer
+    if (!selectedAyah) return;
     
-    // Fetch tafseer content if it hasn't been loaded and we're opening the section
-    if (!classicalTafseerContent && !showClassicalTafseer && selectedAyah) {
-      setIsTafseerLoading(true);
-      try {
-        // Use our service directly since HTML parsing in React Native requires additional libraries
-        const tafseer = await fetchClassicalTafseer(surahNumber, selectedAyah.numberInSurah);
-        setClassicalTafseerContent(tafseer.text);
-        
-        // Pre-fetch AI interpretation so it's ready when needed
-        setTimeout(() => {
-          generateAITafseer(tafseer.text);
-        }, 1000);
-      } catch (error) {
-        console.error('Error fetching classical tafseer:', error);
-        setClassicalTafseerContent('Unable to load classical tafseer at this time. Please try again later.');
-      } finally {
-        setIsTafseerLoading(false);
+    setIsTafseerLoading(true);
+    
+    try {
+      // Get the surah number from either the ayah or route params
+      const surahNum = selectedAyah.surah || surahNumber;
+      const ayahNum = selectedAyah.numberInSurah;
+      
+      // Make sure we have the needed parameters
+      if (!surahNum || !ayahNum) {
+        console.log('Missing required tafseer parameters:', { 
+          selectedAyah, 
+          surahNum, 
+          ayahNum,
+          surahNumber 
+        });
+        throw new Error('Invalid ayah data');
       }
+      
+      console.log(`Fetching tafseer for Surah ${surahNum}, Ayah ${ayahNum}`);
+      
+      // Try to fetch classical tafseer with appropriate parameters
+      const tafseerText = await fetchClassicalTafseer(surahNum, ayahNum);
+      
+      if (!tafseerText || tafseerText.trim() === '') {
+        // If no tafseer text is returned, set a helpful message
+        setClassicalTafseerContent("Classical tafseer is not available for this specific verse. Try using the AI-powered tafseer instead, or choose a different verse.");
+      } else {
+        // Set the tafseer content
+        setClassicalTafseerContent(tafseerText);
+      }
+      
+      // Show classical tafseer
+      setShowClassicalTafseer(true);
+    } catch (error) {
+      console.log('Error fetching tafseer:', error);
+      Alert.alert('Error', 'Failed to fetch tafseer. Please check your connection and try again.');
+    } finally {
+      setIsTafseerLoading(false);
     }
   };
 
-  const generateAITafseer = async (classicalText) => {
-    if (!aiTafseerContent && classicalText) {
-      try {
-        // For demonstration, we'll generate a fixed response based on the surah number
-        // In a real app, this would call an AI service API
-        
-        // Example responses for different surah groups:
-        const aiResponses = {
-          // First 10 surahs
-          1: "This opening chapter establishes our relationship with Allah as one of worship and seeking guidance. It reminds us that in our daily challenges, we should ask for direction from the One who created us. This prayer remains essential for modern Muslims navigating complex moral decisions.",
-          2: "This verse emphasizes the importance of maintaining faith despite life's uncertainties. It teaches us that true conviction means trusting Allah's wisdom even when we don't understand His plan. In today's skeptical world, this reminds us that some truths require belief beyond empirical evidence.",
-          3: "Family relationships are highlighted here as a foundation for societal strength. The verse reminds us that respecting family bonds teaches us patience, cooperation, and selflessness. In an era of increasing isolation, these connections provide essential support and grounding.",
-          // Default for other surahs
-          default: "This verse reminds us of our responsibility to be mindful of our actions in everyday life. It emphasizes the importance of integrity and compassion, even in small matters that others might not notice. In today's fast-paced world, this teaching encourages us to pause and reflect on how our choices impact both ourselves and those around us."
-        };
-        
-        // Select response based on surah number or use default
-        let aiResponse = aiResponses[surahNumber] || aiResponses.default;
-        
-        // Set the AI tafseer content
-        setAiTafseerContent(aiResponse);
-      } catch (error) {
-        console.error('Error generating AI tafseer:', error);
-      }
+  // Function to handle the "Chat with AI" button
+  const handleAiTafseer = (ayah) => {
+    try {
+      if (!ayah) return;
+      
+      // Get the translation for this ayah
+      const translation = translations?.ayahs.find(
+        t => t.numberInSurah === ayah.numberInSurah
+      );
+      
+      // Get the surah info for navigation
+      const surahInfo = {
+        name: surahContent.name,
+        englishName: surahContent.englishName,
+        number: surahNumber,
+        ayah: {
+          number: ayah.number,
+          numberInSurah: ayah.numberInSurah,
+          text: ayah.text,
+          translation: translation ? translation.text : null
+        }
+      };
+      
+      // Close the modal
+      closeMenu();
+      
+      // Prepare the initial question about this surah and ayah
+      const initialQuestion = `Tell me more about Surah ${surahNumber} and Ayah ${ayah.numberInSurah}.`;
+      
+      // Navigate to the Tafseer screen with the ayah context and initial question
+      navigation.navigate('Tafseer', { 
+        surahContext: surahInfo,
+        initialQuestion: initialQuestion
+      });
+    } catch (error) {
+      console.log('Error navigating to AI chat:', error);
+      Alert.alert('Error', 'Could not open AI chat. Please try again.');
     }
   };
 
-  const handleAITafseerToggle = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
-    // Toggle the visibility
-    setShowAITafseer(!showAITafseer);
-    
-    // If AI tafseer content isn't loaded yet, show loading state
-    if (!aiTafseerContent && !showAITafseer && classicalTafseerContent) {
-      setIsTafseerLoading(true);
-      try {
-        await generateAITafseer(classicalTafseerContent);
-      } catch (error) {
-        console.error('Error in AI tafseer toggle:', error);
-        setAiTafseerContent('Unable to generate AI interpretation at this time. Please try again later.');
-      } finally {
-        setIsTafseerLoading(false);
-      }
-    }
-  };
+  // Tafseer states
+  const [showClassicalTafseer, setShowClassicalTafseer] = useState(false);
+  const [classicalTafseerContent, setClassicalTafseerContent] = useState('');
+
+  // useEffect for initializing animations when component mounts
+  useEffect(() => {
+    // Initialize animation values
+    slideAnim.setValue(height); // Start from below the screen
+    modalOpacity.setValue(0); // Start fully transparent
+  }, []);
 
   if (loading) {
     return (
@@ -613,7 +1042,7 @@ const SurahDetailScreen = ({ route, navigation }) => {
             {surahContent.englishName}
           </Text>
           <Text style={[styles.reciterName, { color: theme.TEXT_TERTIARY }]}>
-            Reciter: {selectedReciter.name.split(' ')[0]}
+            Reciter: {selectedReciter?.name?.split(' ')[0] || 'Alafasy'}
           </Text>
         </View>
         <TouchableOpacity 
@@ -634,6 +1063,7 @@ const SurahDetailScreen = ({ route, navigation }) => {
       </View>
 
       <ScrollView 
+        ref={scrollViewRef}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -659,9 +1089,21 @@ const SurahDetailScreen = ({ route, navigation }) => {
           // Find matching translation by numberInSurah
           const translation = translations?.ayahs.find(t => t.numberInSurah === ayah.numberInSurah);
           const isSelected = selectedAyah && selectedAyah.number === ayah.number;
+          const isTargetAyah = parseInt(scrollToAyah, 10) === ayah.numberInSurah;
+          const isCurrentlyPlaying = isSurahPlaying && currentAyahPlaying === ayah.numberInSurah - 1;
           
           return (
-            <View key={ayah.number} style={styles.ayahContainer}>
+            <View 
+              key={ayah.number} 
+              style={[
+                styles.ayahContainer,
+                isTargetAyah && styles.targetAyahContainer
+              ]}
+              onLayout={(event) => {
+                // Store the y-position of this ayah
+                measureAyahPosition(ayah.numberInSurah, event.nativeEvent.layout.y);
+              }}
+            >
               <TouchableOpacity
                 activeOpacity={0.7}
                 onPress={() => handlePress(ayah)}
@@ -671,14 +1113,30 @@ const SurahDetailScreen = ({ route, navigation }) => {
                     styles.ayahItem, 
                     {
                       backgroundColor: theme.SURFACE,
-                      borderColor: theme.BORDER,
+                      borderColor: isCurrentlyPlaying 
+                        ? theme.PRIMARY 
+                        : isTargetAyah 
+                          ? theme.PRIMARY
+                          : theme.BORDER,
                       shadowColor: theme.SHADOW,
-                      elevation: isSelected ? 8 : 2,
-                      transform: isSelected ? [{ scale: 1.03 }] : [{ scale: 1 }],
+                      elevation: isSelected || isTargetAyah || isCurrentlyPlaying ? 8 : 2,
+                      transform: isSelected || isTargetAyah || isCurrentlyPlaying ? [{ scale: 1.03 }] : [{ scale: 1 }],
+                      borderWidth: isCurrentlyPlaying ? 2 : isTargetAyah ? 2 : 1,
                     }
                   ]}
                 >
-                  <View style={[styles.ayahNumberContainer, { backgroundColor: theme.PRIMARY }]}>
+                  <View style={[
+                    styles.ayahNumberContainer, 
+                    { 
+                      backgroundColor: isCurrentlyPlaying 
+                        ? theme.PRIMARY 
+                        : isTargetAyah 
+                          ? theme.PRIMARY_LIGHT
+                          : theme.PRIMARY,
+                      borderColor: isTargetAyah ? theme.PRIMARY : 'transparent',
+                      borderWidth: isTargetAyah ? 2 : 0,
+                    }
+                  ]}>
                     <Text style={[styles.ayahNumber, { color: theme.WHITE }]}>{ayah.numberInSurah}</Text>
                   </View>
                   <View style={styles.ayahTextContainer}>
@@ -698,172 +1156,184 @@ const SurahDetailScreen = ({ route, navigation }) => {
 
       {/* Bottom Action Sheet Modal */}
       <Modal
-        animationType="fade"
+        animationType="none" // We'll handle our own animations
         transparent={true}
         visible={selectedAyah !== null}
         onRequestClose={closeMenu}
         statusBarTranslucent={true}
         hardwareAccelerated={true}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={closeMenu}
+        <Animated.View
+          style={[
+            styles.modalOverlay,
+            {
+              backgroundColor: 'rgba(0,0,0,0.4)',
+              opacity: modalOpacity,
+            }
+          ]}
         >
-          <View style={styles.modalContainer}>
-            <View style={[styles.actionSheet, { backgroundColor: theme.SURFACE }]}>
-              {selectedAyah && (
-                <>
-                  <View style={styles.actionSheetHeader}>
-                    <Text style={[styles.actionSheetTitle, { color: theme.TEXT_PRIMARY }]}>
-                      Ayah {selectedAyah.numberInSurah}
-                    </Text>
-                    <View style={[styles.actionSheetDivider, { backgroundColor: theme.BORDER }]} />
-                  </View>
-                  <View style={styles.actionButtonsContainer}>
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => handleBookmark(selectedAyah)}
-                    >
-                      <MaterialCommunityIcons name="bookmark-outline" size={28} color={theme.PRIMARY} />
-                      <Text style={[styles.actionButtonText, { color: theme.TEXT_PRIMARY }]}>
-                        Bookmark
+          {/* This TouchableOpacity handles taps outside the modal content */}
+          <TouchableOpacity
+            style={styles.modalOutsideArea}
+            activeOpacity={1}
+            onPress={closeMenu}
+          >
+            <View style={styles.modalContainer}>
+              <Animated.View
+                style={[
+                  styles.actionSheet,
+                  {
+                    backgroundColor: theme.SURFACE,
+                    transform: [{ translateY: slideAnim }]
+                  }
+                ]}
+                // Important: prevent clicks inside the modal from triggering the outside TouchableOpacity
+                onStartShouldSetResponder={() => true}
+                onResponderRelease={(e) => {
+                  // Prevent clicks inside from closing
+                  e.stopPropagation();
+                }}
+              >
+                {/* Drag handle for visual indicator - only this should respond to pan gesture */}
+                <View {...panResponder.panHandlers} style={styles.dragHandleContainer}>
+                  <View style={[styles.dragHandle, { backgroundColor: theme.BORDER }]} />
+                </View>
+                
+                {selectedAyah && (
+                  <View style={styles.actionSheetContent}>
+                    <View style={styles.actionSheetHeader}>
+                      <Text style={[styles.actionSheetTitle, { color: theme.TEXT_PRIMARY }]}>
+                        Ayah {selectedAyah.numberInSurah}
                       </Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => isPlaying ? stopAyahAudio() : playAyahAudio(selectedAyah)}
-                      disabled={isLoading}
-                    >
-                      {isLoading ? (
-                        <ActivityIndicator size="small" color={theme.PRIMARY} />
-                      ) : (
-                        <MaterialCommunityIcons 
-                          name={isPlaying ? "pause-circle" : "play-circle"} 
-                          size={28} 
-                          color={theme.PRIMARY} 
-                        />
-                      )}
-                      <Text style={[styles.actionButtonText, { color: theme.TEXT_PRIMARY }]}>
-                        {isPlaying ? "Stop" : "Play"}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                  
-                  {/* Tafseer Section */}
-                  <View style={styles.tafseerContainer}>
-                    {/* Classical Tafseer Toggle */}
-                    <TouchableOpacity
-                      style={[
-                        styles.tafseerToggle,
-                        { borderColor: theme.BORDER }
-                      ]}
-                      onPress={handleClassicalTafseerToggle}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.tafseerToggleHeader}>
-                        <MaterialCommunityIcons
-                          name="book-open-variant"
-                          size={24}
-                          color={theme.PRIMARY}
-                        />
-                        <Text style={[styles.tafseerToggleTitle, { color: theme.TEXT_PRIMARY }]}>
-                          View Classical Tafseer
+                    </View>
+                    <View style={styles.actionButtonsContainer}>
+                      <TouchableOpacity
+                        style={styles.actionButton}
+                        onPress={() => handleBookmark(selectedAyah)}
+                      >
+                        <MaterialCommunityIcons name="bookmark-outline" size={28} color={theme.PRIMARY} />
+                        <Text style={[styles.actionButtonText, { color: theme.TEXT_PRIMARY }]}>
+                          Bookmark
                         </Text>
-                      </View>
-                      <MaterialCommunityIcons
-                        name={showClassicalTafseer ? "chevron-up" : "chevron-down"}
-                        size={24}
-                        color={theme.TEXT_SECONDARY}
-                      />
-                    </TouchableOpacity>
-                    
-                    {/* Classical Tafseer Content */}
-                    {showClassicalTafseer && (
-                      <View style={[styles.tafseerContent, { backgroundColor: theme.SURFACE_VARIANT }]}>
-                        {isTafseerLoading ? (
-                          <View style={styles.tafseerLoading}>
-                            <ActivityIndicator size="small" color={theme.PRIMARY} />
-                            <Text style={[styles.tafseerLoadingText, { color: theme.TEXT_SECONDARY }]}>
-                              Loading tafseer...
-                            </Text>
-                          </View>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity
+                        style={styles.actionButton}
+                        onPress={() => isPlaying ? stopAyahAudio() : playAyahAudio(selectedAyah)}
+                        disabled={isLoading}
+                      >
+                        {isLoading ? (
+                          <ActivityIndicator size="small" color={theme.PRIMARY} />
                         ) : (
-                          <Text style={[styles.tafseerText, { color: theme.TEXT_PRIMARY }]}>
-                            {classicalTafseerContent || "Classical tafseer content is not available for this ayah."}
-                          </Text>
-                        )}
-                        
-                        {/* AI Tafseer Toggle (only shown when classical is expanded) */}
-                        <TouchableOpacity
-                          style={[
-                            styles.tafseerToggle,
-                            styles.aiTafseerToggle,
-                            { borderColor: theme.BORDER, marginTop: 16 }
-                          ]}
-                          onPress={handleAITafseerToggle}
-                          activeOpacity={0.7}
-                        >
-                          <View style={styles.tafseerToggleHeader}>
-                            <MaterialCommunityIcons
-                              name="robot"
-                              size={24}
-                              color={theme.PRIMARY}
-                            />
-                            <Text style={[styles.tafseerToggleTitle, { color: theme.TEXT_PRIMARY }]}>
-                              View AI Tafseer
-                            </Text>
-                          </View>
-                          <MaterialCommunityIcons
-                            name={showAITafseer ? "chevron-up" : "chevron-down"}
-                            size={24}
-                            color={theme.TEXT_SECONDARY}
+                          <MaterialCommunityIcons 
+                            name={isPlaying ? "pause-circle" : "play-circle"} 
+                            size={28} 
+                            color={theme.PRIMARY} 
                           />
-                        </TouchableOpacity>
-                        
-                        {/* AI Tafseer Content */}
-                        {showAITafseer && (
-                          <View style={[styles.tafseerContent, styles.aiTafseerContent, { backgroundColor: theme.SURFACE_VARIANT }]}>
-                            {isTafseerLoading ? (
-                              <View style={styles.tafseerLoading}>
-                                <ActivityIndicator size="small" color={theme.PRIMARY} />
-                                <Text style={[styles.tafseerLoadingText, { color: theme.TEXT_SECONDARY }]}>
-                                  Generating modern interpretation...
-                                </Text>
-                              </View>
-                            ) : (
-                              <>
-                                <Text style={[styles.tafseerText, { color: theme.TEXT_PRIMARY }]}>
-                                  {aiTafseerContent || "AI interpretation is not available for this ayah."}
-                                </Text>
-                                
+                        )}
+                        <Text style={[styles.actionButtonText, { color: theme.TEXT_PRIMARY }]}>
+                          {isPlaying ? "Stop" : "Play"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    
+                    {/* Tafseer Section */}
+                    <View style={styles.tafseerContainer}>
+                      {/* Classical Tafseer Toggle */}
+                      <TouchableOpacity
+                        style={[
+                          styles.tafseerToggle,
+                          { borderColor: theme.BORDER }
+                        ]}
+                        onPress={handleClassicalTafseerToggle}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.tafseerToggleHeader}>
+                          <MaterialCommunityIcons
+                            name="book-open-variant"
+                            size={24}
+                            color={theme.PRIMARY}
+                          />
+                          <Text style={[styles.tafseerToggleTitle, { color: theme.TEXT_PRIMARY }]}>
+                            View Classical Tafseer
+                          </Text>
+                        </View>
+                        <MaterialCommunityIcons
+                          name={showClassicalTafseer ? "chevron-up" : "chevron-down"}
+                          size={24}
+                          color={theme.TEXT_SECONDARY}
+                        />
+                      </TouchableOpacity>
+                      
+                      {/* Classical Tafseer Content */}
+                      {showClassicalTafseer && (
+                        <View style={[styles.tafseerContent, { backgroundColor: theme.SURFACE_VARIANT }]}>
+                          {isTafseerLoading ? (
+                            <View style={styles.tafseerLoading}>
+                              <ActivityIndicator size="small" color={theme.PRIMARY} />
+                              <Text style={[styles.tafseerLoadingText, { color: theme.TEXT_SECONDARY }]}>
+                                Loading tafseer...
+                              </Text>
+                            </View>
+                          ) : (
+                            <>
+                              <Text 
+                                style={[styles.tafseerText, { color: theme.TEXT_PRIMARY }]}
+                                numberOfLines={10} // Limit the number of lines
+                              >
+                                {classicalTafseerContent || "Classical tafseer content is not available for this ayah."}
+                              </Text>
+                              
+                              {classicalTafseerContent && classicalTafseerContent.length > 0 && (
                                 <TouchableOpacity
-                                  style={[styles.chatWithAiButton, { backgroundColor: theme.PRIMARY }]}
-                                  onPress={() => handleAiTafseer(selectedAyah)}
-                                  activeOpacity={0.8}
+                                  style={[styles.readMoreButton, { backgroundColor: theme.SURFACE, borderColor: theme.PRIMARY }]}
+                                  onPress={() => {
+                                    // Navigate to full tafseer screen with all necessary data
+                                    navigation.navigate('TafseerDetail', {
+                                      surahName: surahContent.name,
+                                      surahEnglishName: surahContent.englishName,
+                                      surahNumber: surahNumber,
+                                      ayahNumber: selectedAyah.numberInSurah,
+                                      ayahText: selectedAyah.text,
+                                      ayahTranslation: translations?.ayahs.find(t => t.numberInSurah === selectedAyah.numberInSurah)?.text,
+                                      tafseerContent: classicalTafseerContent
+                                    });
+                                    // Close the action sheet modal
+                                    closeMenu();
+                                  }}
                                 >
-                                  <MaterialCommunityIcons 
-                                    name="message-text" 
-                                    size={18} 
-                                    color={theme.WHITE} 
-                                  />
-                                  <Text style={[styles.chatWithAiButtonText, { color: theme.WHITE }]}>
-                                    Chat with AI
+                                  <Text style={[styles.readMoreButtonText, { color: theme.PRIMARY }]}>
+                                    Read Full Tafseer
                                   </Text>
                                 </TouchableOpacity>
-                              </>
-                            )}
-                          </View>
-                        )}
-                      </View>
-                    )}
+                              )}
+                            </>
+                          )}
+                          
+                          {/* Chat with AI Button */}
+                          <TouchableOpacity
+                            style={[styles.chatWithAiButton, { backgroundColor: theme.PRIMARY, marginTop: 16 }]}
+                            onPress={() => handleAiTafseer(selectedAyah)}
+                            activeOpacity={0.8}
+                          >
+                            <MaterialCommunityIcons 
+                              name="robot" 
+                              size={18} 
+                              color={theme.WHITE} 
+                            />
+                            <Text style={[styles.chatWithAiButtonText, { color: theme.WHITE }]}>
+                              Chat with AI about this ayah
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
                   </View>
-                </>
-              )}
+                )}
+              </Animated.View>
             </View>
-          </View>
-        </TouchableOpacity>
+          </TouchableOpacity>
+        </Animated.View>
       </Modal>
     </SafeAreaView>
   );
@@ -938,6 +1408,10 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginBottom: 12,
   },
+  targetAyahContainer: {
+    marginTop: 6,
+    marginBottom: 14,
+  },
   ayahItem: {
     flexDirection: 'row',
     borderRadius: 12,
@@ -989,7 +1463,10 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  modalOutsideArea: {
+    flex: 1,
+    justifyContent: 'flex-end',
   },
   modalContainer: {
     width: '100%',
@@ -1000,8 +1477,7 @@ const styles = StyleSheet.create({
     width: '100%',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingVertical: 20,
-    paddingHorizontal: 20,
+    paddingBottom: 20,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -1010,7 +1486,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 5,
     elevation: 10,
-    transform: [{ translateY: 0 }],
   },
   actionSheetHeader: {
     alignItems: 'center',
@@ -1032,6 +1507,7 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingVertical: 10,
     gap: 40,
+    marginBottom: 10,
   },
   actionButton: {
     alignItems: 'center',
@@ -1093,19 +1569,13 @@ const styles = StyleSheet.create({
   },
   tafseerContent: {
     padding: 16,
-    borderRadius: 10,
-    marginBottom: 12,
-  },
-  aiTafseerToggle: {
-    marginTop: 8,
-  },
-  aiTafseerContent: {
+    borderRadius: 8,
     marginTop: 8,
   },
   tafseerText: {
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: 'IBMPlexSans_400Regular',
-    lineHeight: 20,
+    lineHeight: 22,
   },
   tafseerLoading: {
     alignItems: 'center',
@@ -1129,6 +1599,31 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'IBMPlexSans_500Medium',
     marginLeft: 8,
+  },
+  readMoreButton: {
+    alignItems: 'center',
+    padding: 12,
+    borderWidth: 1,
+    borderRadius: 8,
+    marginTop: 12,
+  },
+  readMoreButtonText: {
+    fontSize: 14,
+    fontFamily: 'IBMPlexSans_500Medium',
+  },
+  dragHandleContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10, 
+    width: '100%',
+  },
+  dragHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+  },
+  actionSheetContent: {
+    paddingHorizontal: 20,
   },
 });
 

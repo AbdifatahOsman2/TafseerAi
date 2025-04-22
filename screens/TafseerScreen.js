@@ -43,7 +43,7 @@ const TafseerScreen = ({ route, navigation }) => {
   const { theme } = useTheme();
   
   // UI State
-  const [showStartScreen, setShowStartScreen] = useState(true);
+  const [showStartScreen, setShowStartScreen] = useState(false);
   const [showSurahModal, setShowSurahModal] = useState(false);
   
   // Content State
@@ -72,116 +72,59 @@ const TafseerScreen = ({ route, navigation }) => {
   const inputRef = useRef(null);
 
   // Add chat history persistence functions
-  // Save messages to AsyncStorage
-  const saveChatHistory = async (updatedMessages) => {
+  const saveChatHistory = async (messages) => {
     try {
-      const chatHistoryData = {
-        messages: updatedMessages,
-        currentChatSurah: currentChatSurah,
-        selectedSurah: selectedSurah
-      };
-      
-      await AsyncStorage.setItem('tafseerChatHistory', JSON.stringify(chatHistoryData));
+      await AsyncStorage.setItem('chatHistory', JSON.stringify(messages));
     } catch (error) {
-      console.error('Error saving chat history:', error);
+      // Error handling without console.error
     }
   };
 
-  // Load messages from AsyncStorage
-  const loadChatHistory = async () => {
-    // If we have route params with ayah, don't load history as we're starting a new specific conversation
-    if (route.params?.surah && route.params?.ayah) {
-      console.log('Route params present, skipping chat history load');
-      return false;
-    }
-    
-    try {
-      const savedChatHistory = await AsyncStorage.getItem('tafseerChatHistory');
-      
-      if (savedChatHistory) {
-        const parsedData = JSON.parse(savedChatHistory);
-        
-        // Only restore data if we have messages
-        if (parsedData.messages && parsedData.messages.length > 0) {
-          setMessages(parsedData.messages);
-          
-          // Restore surah context if available
-          if (parsedData.currentChatSurah) {
-            setCurrentChatSurah(parsedData.currentChatSurah);
-          }
-          
-          if (parsedData.selectedSurah) {
-            setSelectedSurah(parsedData.selectedSurah);
-          }
-          
-          // Skip the start screen if we have chat history
-          setShowStartScreen(false);
-          
-          return true; // Return true if we loaded chat history
-        }
+  // Load chat history from AsyncStorage
+  useEffect(() => {
+    const loadChatHistory = async () => {
+      // Skip loading chat history if we're coming from context navigation
+      if (route.params && route.params.surahContext) {
+        // Coming from surah context
+        return;
       }
       
-      return false; // Return false if no chat history was loaded
-    } catch (error) {
-      console.error('Error loading chat history:', error);
-      return false;
-    }
-  };
+      try {
+        const savedHistory = await AsyncStorage.getItem('chatHistory');
+        if (savedHistory) {
+          setMessages(JSON.parse(savedHistory));
+        }
+      } catch (error) {
+        // Error handling without console.error
+      }
+    };
+    
+    loadChatHistory();
+    fetchSurahs();
+  }, [route.params]);
 
-  // Clear chat history
   const clearChatHistory = async () => {
     try {
-      await AsyncStorage.removeItem('tafseerChatHistory');
-      // Reset state to initial values
-      setMessages(initialMessages);
-      setCurrentChatSurah(null);
-      setSelectedSurah(null);
+      setMessages([]);
+      await AsyncStorage.removeItem('chatHistory');
     } catch (error) {
-      console.error('Error clearing chat history:', error);
+      // Error handling without console.error
     }
   };
-
-  // Fetch all surahs from API
-  useEffect(() => {
-    fetchSurahs();
-    
-    // Try to load chat history on initial mount
-    loadChatHistory().then(historyLoaded => {
-      // If no history was loaded, proceed with normal startup
-      if (!historyLoaded && route.params?.surah && route.params?.ayah) {
-        // Process route params as before
-      }
-    });
-  }, []);
 
   const fetchSurahs = async () => {
     setLoadingSurahs(true);
     try {
       const response = await fetch('https://api.alquran.cloud/v1/surah');
       const data = await response.json();
-      if (data.code === 200 && data.status === 'OK') {
+      
+      if (data.code === 200) {
         setSurahs(data.data);
       } else {
-        console.error('Failed to fetch surahs:', data);
-        // Fallback to mock data if API fails
-        setSurahs([
-          { number: 1, name: 'الفاتحة', englishName: 'Al-Fatiha', numberOfAyahs: 7 },
-          { number: 2, name: 'البقرة', englishName: 'Al-Baqarah', numberOfAyahs: 286 },
-          { number: 3, name: 'آل عمران', englishName: 'Aal-Imran', numberOfAyahs: 200 },
-          { number: 4, name: 'النساء', englishName: 'An-Nisa', numberOfAyahs: 176 },
-          { number: 5, name: 'المائدة', englishName: 'Al-Ma\'idah', numberOfAyahs: 120 },
-        ]);
+        // Handle API error
       }
     } catch (error) {
-      console.error('Error fetching surahs:', error);
-      // Fallback to mock data if API fails
-      setSurahs([
-        { number: 1, name: 'الفاتحة', englishName: 'Al-Fatiha', numberOfAyahs: 7 },
-        { number: 2, name: 'البقرة', englishName: 'Al-Baqarah', numberOfAyahs: 286 },
-        { number: 3, name: 'آل عمران', englishName: 'Aal-Imran', numberOfAyahs: 200 },
-        { number: 4, name: 'النساء', englishName: 'An-Nisa', numberOfAyahs: 176 },
-        { number: 5, name: 'المائدة', englishName: 'Al-Ma\'idah', numberOfAyahs: 120 },
-      ]);
+      // Error handling without console.error
     } finally {
       setLoadingSurahs(false);
     }
@@ -235,71 +178,38 @@ const TafseerScreen = ({ route, navigation }) => {
     };
   }, []);
 
-  // Add this new useEffect to handle route params for prefilled questions
+  // Update the useEffect that handles route params to not worry about showStartScreen
   useEffect(() => {
-    // Check if we have route params with surah and ayah info
-    if (route.params?.surah && route.params?.ayah) {
-      console.log("Received route params with ayah:", route.params);
+    if (route.params && (route.params.surahContext || route.params.initialQuestion)) {
+      const { surahContext, initialQuestion } = route.params;
       
-      // Set to false immediately to prevent showing start screen
-      setShowStartScreen(false);
-      
-      // We'll handle route params once surahs are loaded
-      if (surahs.length > 0) {
-        const { surah, ayah, mode, initialQuestion } = route.params;
-        
-        console.log("Processing ayah navigation with initial question:", initialQuestion);
-        
-        // First, find the surah in our list to ensure we have a complete object
-        const matchedSurah = surahs.find(s => s.number === surah.number);
-        
-        // Use the matched surah from our list if available, otherwise use the passed surah
-        const surahToUse = matchedSurah || surah;
-        
-        // Set the selected surah
-        setSelectedSurah(surahToUse);
-        setCurrentChatSurah(surahToUse);
-        
-        // Create a system message about the context
-        const contextMessageId = `context-${Date.now()}`;
-        const contextMessage = {
-          id: contextMessageId,
-          text: `You're now discussing Surah ${surahToUse.englishName} (${surahToUse.name}), Ayah ${ayah.numberInSurah}.`,
-          sender: 'system'
+      // Set the context values if surahContext is provided
+      if (surahContext) {
+        // Creating a surah object from the surahContext
+        const surah = {
+          name: surahContext.name,
+          englishName: surahContext.englishName,
+          number: surahContext.number
         };
         
-        // Create an ayah display message
-        const ayahMessageId = `ayah-${Date.now()}`;
-        const ayahMessage = {
-          id: ayahMessageId,
-          text: `${ayah.text}\n\n${ayah.translation}`,
-          sender: 'ayah'
-        };
+        setSelectedSurah(surah);
+        setCurrentChatSurah(surah);
+      }
+      
+      // If we have an initial question, set it and send automatically after a delay
+      if (initialQuestion) {
+        setInputMessage(initialQuestion);
         
-        // Update the messages
-        const newMessages = [...initialMessages, contextMessage, ayahMessage];
-        setMessages(newMessages);
+        // Auto-send the initial question after a short delay
+        // to give the UI time to update
+        const timer = setTimeout(() => {
+          handleSendMessage(initialQuestion);
+        }, 500); // Increased delay to ensure UI is ready
         
-        // Save chat history
-        saveChatHistory(newMessages);
-        
-        // If there's an initial question, set it in the input field and send it
-        if (initialQuestion) {
-          // Set the input message directly
-          setInputMessage(initialQuestion);
-          
-          // Auto-send the question after a short delay
-          setTimeout(() => {
-            console.log("Auto-sending initial question:", initialQuestion);
-            handleSendMessage(initialQuestion);
-            
-            // Clear the input field after sending
-            setInputMessage('');
-          }, 800);
-        }
+        return () => clearTimeout(timer);
       }
     }
-  }, [route.params, surahs]);
+  }, [route.params]);
 
   /**
    * Process AI response text to replace instances of "God" with "ﷲ"
@@ -429,7 +339,7 @@ const TafseerScreen = ({ route, navigation }) => {
       });
       
     } catch (error) {
-      console.error('Error getting AI response:', error);
+      // Error handling without console.error
       // Add error message with unique ID
       const generalErrorId = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       setMessages(prevMessages => {
@@ -456,11 +366,6 @@ const TafseerScreen = ({ route, navigation }) => {
     }
     
     Keyboard.dismiss();
-  };
-
-  const handleStartTafseer = () => {
-    setShowStartScreen(false);
-    setShowSurahModal(true);
   };
 
   const handleSurahSelect = (surah) => {
@@ -886,27 +791,6 @@ const TafseerScreen = ({ route, navigation }) => {
     );
   };
 
-  // Start Screen
-  if (showStartScreen) {
-    return (
-      <SafeAreaView style={[styles.container, { backgroundColor: theme.BACKGROUND }]}>
-        <StatusBar barStyle={theme.DARK ? "light-content" : "dark-content"} />
-        <View style={styles.centerContent}>
-          <Text style={[styles.titleText, { color: theme.TEXT_PRIMARY }]}>AI Tafseer</Text>
-          <Text style={[styles.subtitleText, { color: theme.TEXT_SECONDARY }]}>
-            Ask questions about the Quran and get AI-powered explanations
-          </Text>
-          <TouchableOpacity
-            style={[styles.startButton, { backgroundColor: theme.PRIMARY }]}
-            onPress={handleStartTafseer}
-          >
-            <Text style={[styles.startButtonText, { color: theme.WHITE }]}>Start Tafseer</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.BACKGROUND }]}>
       <StatusBar barStyle={theme.DARK ? "light-content" : "dark-content"} />
@@ -930,8 +814,6 @@ const TafseerScreen = ({ route, navigation }) => {
                     text: "Clear", 
                     onPress: () => {
                       clearChatHistory();
-                      // Reset to start screen
-                      setShowStartScreen(true);
                     },
                     style: "destructive"
                   }
@@ -962,13 +844,13 @@ const TafseerScreen = ({ route, navigation }) => {
       {!selectedSurah && (
         <View style={styles.optionalSurahPrompt}>
           <Text style={[styles.promptText, { color: theme.TEXT_SECONDARY }]}>
-            You can ask general questions or select a specific Surah for deeper discussion
+            Select a specific Surah or ask any general question about the Quran
           </Text>
           <TouchableOpacity
-            style={[styles.selectSurahButton, { backgroundColor: theme.PRIMARY_LIGHT }]}
+            style={[styles.selectSurahButton, { backgroundColor: theme.PRIMARY }]}
             onPress={() => setShowSurahModal(true)}
           >
-            <Text style={[styles.buttonText, { color: theme.PRIMARY }]}>Select Surah (Optional)</Text>
+            <Text style={[styles.buttonText, { color: theme.WHITE }]}>Select a Surah</Text>
           </TouchableOpacity>
         </View>
       )}

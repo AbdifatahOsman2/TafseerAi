@@ -12,11 +12,13 @@ import {
   Platform,
   TouchableWithoutFeedback,
   Keyboard,
-  Alert
+  Alert,
+  Image
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { getAuth, sendPasswordResetEmail } from 'firebase/auth';
+import { sendPasswordResetEmail } from 'firebase/auth';
 import { useTheme } from '../context/ThemeContext';
+import { auth } from '../config/firebase';
 
 const ForgotPasswordScreen = ({ navigation }) => {
   const { theme } = useTheme();
@@ -39,7 +41,6 @@ const ForgotPasswordScreen = ({ navigation }) => {
     if (!validateForm()) return;
     
     setIsLoading(true);
-    const auth = getAuth();
     
     try {
       await sendPasswordResetEmail(auth, email);
@@ -85,6 +86,15 @@ const ForgotPasswordScreen = ({ navigation }) => {
                 color={theme.TEXT_PRIMARY} 
               />
             </TouchableOpacity>
+            
+            <View style={styles.logoContainer}>
+              <Image 
+                source={require('../assets/quran-image.png')}
+                style={styles.logo}
+                resizeMode="contain"
+              />
+            </View>
+            
             <Text style={[styles.title, { color: theme.TEXT_PRIMARY }]}>
               Reset Password
             </Text>
@@ -126,19 +136,21 @@ const ForgotPasswordScreen = ({ navigation }) => {
               )}
             </View>
             
-            <TouchableOpacity
-              style={[styles.resetButton, { backgroundColor: theme.PRIMARY }]}
-              onPress={handleResetPassword}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator color={theme.WHITE} />
-              ) : (
-                <Text style={[styles.resetButtonText, { color: theme.WHITE }]}>
-                  Send Reset Link
-                </Text>
-              )}
-            </TouchableOpacity>
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity
+                style={[styles.resetButton, { backgroundColor: theme.PRIMARY }]}
+                onPress={handleResetPassword}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color={theme.WHITE} />
+                ) : (
+                  <Text style={[styles.resetButtonText, { color: theme.WHITE }]}>
+                    Send Reset Link
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
             
             <TouchableOpacity
               style={styles.loginLink}
@@ -158,34 +170,55 @@ const ForgotPasswordScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
+    padding: 30,
   },
   header: {
     marginTop: StatusBar.currentHeight || 40,
     marginBottom: 40,
+    alignItems: 'center',
   },
   backButton: {
+    alignSelf: 'flex-start',
     marginBottom: 20,
+    paddingVertical: 4,
+  },
+  logoContainer: {
+    width: 100,
+    height: 100,
+    marginBottom: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logo: {
+    width: '100%',
+    height: '100%',
   },
   title: {
     fontSize: 28,
     fontFamily: 'IBMPlexSans_700Bold',
-    marginBottom: 8,
+    marginBottom: 12,
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
     fontFamily: 'IBMPlexSans_400Regular',
+    lineHeight: 22,
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
   form: {
     flex: 1,
+    marginTop: 20,
+    alignItems: 'center',
   },
   inputGroup: {
-    marginBottom: 24,
+    marginBottom: 32,
+    width: '85%',
   },
   label: {
     fontSize: 14,
     fontFamily: 'IBMPlexSans_500Medium',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   inputContainer: {
     flexDirection: 'row',
@@ -196,25 +229,29 @@ const styles = StyleSheet.create({
   },
   inputIcon: {
     marginLeft: 16,
-    marginRight: 8,
+    marginRight: 12,
   },
   input: {
     flex: 1,
     height: '100%',
     fontFamily: 'IBMPlexSans_400Regular',
     fontSize: 16,
+    paddingVertical: 8,
   },
   errorText: {
     fontSize: 12,
     fontFamily: 'IBMPlexSans_400Regular',
-    marginTop: 4,
+    marginTop: 8,
+  },
+  buttonContainer: {
+    width: '85%',
+    marginBottom: 40,
   },
   resetButton: {
     height: 56,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
   },
   resetButtonText: {
     fontSize: 16,
@@ -222,10 +259,12 @@ const styles = StyleSheet.create({
   },
   loginLink: {
     alignItems: 'center',
+    paddingVertical: 16,
   },
   loginLinkText: {
     fontSize: 14,
     fontFamily: 'IBMPlexSans_400Regular',
+    lineHeight: 20,
   },
 });
 

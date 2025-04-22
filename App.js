@@ -7,6 +7,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFonts, IBMPlexSans_100Thin, IBMPlexSans_200ExtraLight, IBMPlexSans_300Light, IBMPlexSans_400Regular, IBMPlexSans_500Medium, IBMPlexSans_600SemiBold, IBMPlexSans_700Bold } from '@expo-google-fonts/ibm-plex-sans';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Import Firebase configuration
 import { app } from './config/firebase';
@@ -17,11 +18,13 @@ import ExploreScreen from './screens/ExploreScreen';
 import TafseerScreen from './screens/TafseerScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import SurahDetailScreen from './screens/SurahDetailScreen';
+import TafseerDetailScreen from './screens/TafseerDetailScreen';
 import ReciterSettingsScreen from './screens/ReciterSettingsScreen';
 import BookmarksScreen from './screens/BookmarksScreen';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
+import OnboardingScreen from './screens/OnboardingScreen';
 
 // Import Theme Provider
 import { ThemeProvider, useTheme } from './context/ThemeContext';
@@ -52,6 +55,7 @@ const ExploreStack = () => {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="ExploreMain" component={ExploreScreen} />
       <Stack.Screen name="SurahDetail" component={SurahDetailScreen} />
+      <Stack.Screen name="TafseerDetail" component={TafseerDetailScreen} />
     </Stack.Navigator>
   );
 };
@@ -64,6 +68,7 @@ const HomeStack = () => {
       <Stack.Screen name="HomeMain" component={HomeScreen} />
       <Stack.Screen name="Bookmarks" component={BookmarksScreen} />
       <Stack.Screen name="SurahDetail" component={SurahDetailScreen} />
+      <Stack.Screen name="TafseerDetail" component={TafseerDetailScreen} />
     </Stack.Navigator>
   );
 };
@@ -262,10 +267,10 @@ const TabNavigator = () => {
   );
 };
 
-// Main app component with authentication flow
 const AppNavigator = () => {
   const { theme, isDarkMode } = useTheme();
   const { user, isGuest, isLoading } = useUser();
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(null);
   const [fontsLoaded] = useFonts({
     IBMPlexSans_100Thin,
     IBMPlexSans_200ExtraLight, 
@@ -276,8 +281,23 @@ const AppNavigator = () => {
     IBMPlexSans_700Bold,
   });
 
+  // Check if user has completed onboarding
+  useEffect(() => {
+    const checkOnboardingStatus = async () => {
+      try {
+        const onboardingStatus = await AsyncStorage.getItem('hasCompletedOnboarding');
+        setHasCompletedOnboarding(onboardingStatus === 'true');
+      } catch (error) {
+        // Default to not completed
+        setHasCompletedOnboarding(false);
+      }
+    };
+    
+    checkOnboardingStatus();
+  }, []);
+
   // Show loading screen while fonts are loading or user state is being determined
-  if (!fontsLoaded || isLoading) {
+  if (!fontsLoaded || isLoading || hasCompletedOnboarding === null) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.BACKGROUND }]}>
         <Text style={[styles.loadingText, { color: theme.TEXT_PRIMARY }]}>Loading...</Text>
@@ -289,12 +309,24 @@ const AppNavigator = () => {
     <NavigationContainer>
       <StatusBar style={isDarkMode ? "light" : "dark"} />
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {!isGuest && !user ? (
-          // Auth screens when not logged in and not in guest mode
-          <Stack.Screen name="Auth" component={AuthNavigator} />
+        {!hasCompletedOnboarding ? (
+          // Show onboarding for first-time users only
+          <Stack.Screen name="Onboarding" component={OnboardingScreen} />
         ) : (
-          // Main app screens when logged in or in guest mode
-          <Stack.Screen name="MainApp" component={TabNavigator} />
+          // Main navigation structure
+          <Stack.Screen name="Main">
+            {() => (
+              <Stack.Navigator screenOptions={{ headerShown: false }}>
+                {!isGuest && !user ? (
+                  // Auth screens when not logged in and not in guest mode
+                  <Stack.Screen name="Auth" component={AuthNavigator} />
+                ) : (
+                  // Main app screens when logged in or in guest mode
+                  <Stack.Screen name="MainApp" component={TabNavigator} />
+                )}
+              </Stack.Navigator>
+            )}
+          </Stack.Screen>
         )}
       </Stack.Navigator>
     </NavigationContainer>

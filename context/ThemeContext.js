@@ -7,39 +7,44 @@ const ThemeContext = createContext();
 
 // Theme provider component
 export const ThemeProvider = ({ children }) => {
-  const [isDarkMode, setIsDarkMode] = useState(false);
-  const [theme, setTheme] = useState(COLORS);
+  const [isDarkMode, setIsDarkMode] = useState(true); // Default to dark mode
+  const [theme, setTheme] = useState(DARK_COLORS); // Default to dark colors
   const [isLoading, setIsLoading] = useState(true);
 
   // Load saved theme preference from AsyncStorage
   useEffect(() => {
-    const loadThemePreference = async () => {
+    const loadTheme = async () => {
       try {
         const savedTheme = await AsyncStorage.getItem('theme');
-        if (savedTheme !== null) {
-          const isDark = savedTheme === 'dark';
-          setIsDarkMode(isDark);
-          setTheme(isDark ? DARK_COLORS : COLORS);
+        if (savedTheme) {
+          setIsDarkMode(savedTheme === 'dark');
+          setTheme(savedTheme === 'dark' ? DARK_COLORS : COLORS);
+        } else {
+          // No saved preference, use dark mode as default
+          await AsyncStorage.setItem('theme', 'dark');
+          setIsDarkMode(true);
+          setTheme(DARK_COLORS);
         }
       } catch (error) {
-        console.error('Error loading theme preference:', error);
+        // Error handling without console.error
       } finally {
         setIsLoading(false);
       }
     };
 
-    loadThemePreference();
+    loadTheme();
   }, []);
 
   // Toggle between light and dark theme
   const toggleTheme = async () => {
+    const newMode = !isDarkMode;
+    setIsDarkMode(newMode);
+    setTheme(newMode ? DARK_COLORS : COLORS);
+    
     try {
-      const newMode = !isDarkMode;
-      setIsDarkMode(newMode);
-      setTheme(newMode ? DARK_COLORS : COLORS);
       await AsyncStorage.setItem('theme', newMode ? 'dark' : 'light');
     } catch (error) {
-      console.error('Error saving theme preference:', error);
+      // Error handling without console.error
     }
   };
 
