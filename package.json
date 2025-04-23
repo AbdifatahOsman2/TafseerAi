@@ -7,7 +7,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "postinstall": "node ios-fix.js"
+    "postinstall": "node ios-fix.js",
+    "build:ios": "./ios-build.sh"
   },
   "dependencies": {
     "@expo-google-fonts/ibm-plex-sans": "^0.3.0",
@@ -36,5 +37,11 @@
   "devDependencies": {
     "@babel/core": "^7.20.0"
   },
-  "private": true
+  "private": true,
+  "react-native": {
+    "firebase": {
+      "app": "@react-native-firebase/app",
+      "firestore": "@react-native-firebase/firestore"
+    }
+  }
 }

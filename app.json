@@ -23,7 +23,8 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1E2128"
-      }
+      },
+      "package": "com.hygalac.TafseerAi"
     },
     "web": {
       "favicon": "./assets/favicon.png"
