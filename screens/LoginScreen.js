@@ -147,7 +147,7 @@ const LoginScreen = ({ navigation }) => {
                 />
               </View>
               {errors.email && (
-                <Text style={[styles.errorText, { color: theme.ERROR }]}>
+                <Text style={[styles.errorText, { color: theme.ERROR_LIGHT || '#ff6b6b' }]}>
                   {errors.email}
                 </Text>
               )}
@@ -188,7 +188,7 @@ const LoginScreen = ({ navigation }) => {
                 </TouchableOpacity>
               </View>
               {errors.password && (
-                <Text style={[styles.errorText, { color: theme.ERROR }]}>
+                <Text style={[styles.errorText, { color: theme.ERROR_LIGHT || '#ff6b6b' }]}>
                   {errors.password}
                 </Text>
               )}
@@ -256,13 +256,13 @@ const styles = StyleSheet.create({
   },
   header: {
     marginTop: StatusBar.currentHeight || 40,
-    marginBottom: 40,
+    marginBottom: 20,
     alignItems: 'center',
   },
   logoContainer: {
-    width: 120,
-    height: 120,
-    marginBottom: 24,
+    width: 100,
+    height: 100,
+    marginBottom: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontFamily: 'IBMPlexSans_700Bold',
-    marginBottom: 12,
+    marginBottom: 8,
     textAlign: 'center',
   },
   subtitle: {
@@ -284,11 +284,11 @@ const styles = StyleSheet.create({
   },
   form: {
     flex: 1,
-    marginTop: 20,
+    marginTop: 10,
     alignItems: 'center',
   },
   inputGroup: {
-    marginBottom: 28,
+    marginBottom: 16,
     width: '85%',
   },
   label: {
@@ -321,6 +321,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'IBMPlexSans_400Regular',
     marginTop: 8,
+    color: '#ff6b6b',
   },
   forgotPasswordContainer: {
     width: '85%',

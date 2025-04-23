@@ -92,6 +92,7 @@ const RegisterScreen = ({ navigation }) => {
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <SafeAreaView style={[styles.container, { backgroundColor: theme.BACKGROUND }]}>
@@ -150,7 +151,7 @@ const RegisterScreen = ({ navigation }) => {
                 />
               </View>
               {errors.name && (
-                <Text style={[styles.errorText, { color: theme.ERROR }]}>
+                <Text style={[styles.errorText, { color: theme.ERROR_LIGHT || '#ff6b6b' }]}>
                   {errors.name}
                 </Text>
               )}
@@ -182,7 +183,7 @@ const RegisterScreen = ({ navigation }) => {
                 />
               </View>
               {errors.email && (
-                <Text style={[styles.errorText, { color: theme.ERROR }]}>
+                <Text style={[styles.errorText, { color: theme.ERROR_LIGHT || '#ff6b6b' }]}>
                   {errors.email}
                 </Text>
               )}
@@ -223,7 +224,7 @@ const RegisterScreen = ({ navigation }) => {
                 </TouchableOpacity>
               </View>
               {errors.password && (
-                <Text style={[styles.errorText, { color: theme.ERROR }]}>
+                <Text style={[styles.errorText, { color: theme.ERROR_LIGHT || '#ff6b6b' }]}>
                   {errors.password}
                 </Text>
               )}
@@ -265,22 +266,23 @@ const RegisterScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 30,
+    padding: 20,
   },
   header: {
-    marginTop: StatusBar.currentHeight || 40,
-    marginBottom: 40,
+    marginTop: Platform.OS === 'ios' ? 0 : (StatusBar.currentHeight || 20),
+    marginBottom: 10,
     alignItems: 'center',
   },
   backButton: {
     alignSelf: 'flex-start',
-    marginBottom: 20,
-    paddingVertical: 4,
+    marginBottom: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
   },
   logoContainer: {
-    width: 100,
-    height: 100,
-    marginBottom: 24,
+    width: 80,
+    height: 80,
+    marginBottom: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -289,37 +291,37 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontFamily: 'IBMPlexSans_700Bold',
-    marginBottom: 12,
+    marginBottom: 4,
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: 'IBMPlexSans_400Regular',
     textAlign: 'center',
     paddingHorizontal: 20,
   },
   form: {
     flex: 1,
-    marginTop: 20,
+    marginTop: 5,
     alignItems: 'center',
   },
   inputGroup: {
-    marginBottom: 28,
+    marginBottom: 12,
     width: '85%',
   },
   label: {
     fontSize: 14,
     fontFamily: 'IBMPlexSans_500Medium',
-    marginBottom: 10,
+    marginBottom: 6,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
     borderRadius: 12,
-    height: 56,
+    height: 50,
   },
   inputIcon: {
     marginLeft: 16,
@@ -338,18 +340,19 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 12,
     fontFamily: 'IBMPlexSans_400Regular',
-    marginTop: 8,
+    marginTop: 4,
+    color: '#ff6b6b',
   },
   buttonContainer: {
     width: '85%',
-    marginBottom: 40,
+    marginBottom: 20,
   },
   registerButton: {
-    height: 56,
+    height: 50,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 16,
+    marginTop: 10,
   },
   registerButtonText: {
     fontSize: 16,
@@ -358,7 +361,7 @@ const styles = StyleSheet.create({
   loginContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    paddingVertical: 16,
+    paddingVertical: 10,
   },
   loginText: {
     fontSize: 14,

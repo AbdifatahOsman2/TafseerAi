@@ -208,6 +208,19 @@ const ProfileScreen = ({ navigation }) => {
               </View>
               <MaterialCommunityIcons name="chevron-right" size={24} color={theme.TEXT_SECONDARY} />
             </TouchableOpacity>
+
+            {!isGuest && (
+              <TouchableOpacity 
+                style={styles.settingItem}
+                onPress={handleDeleteAccount}
+              >
+                <View style={styles.settingInfo}>
+                  <MaterialCommunityIcons name="account-remove" size={24} color={theme.ERROR_LIGHT || '#ff6b6b'} />
+                  <Text style={[styles.settingText, { color: theme.ERROR_LIGHT || '#ff6b6b' }]}>Delete Account</Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={24} color={theme.ERROR_LIGHT || '#ff6b6b'} />
+              </TouchableOpacity>
+            )}
           </View>
 
           {isGuest ? (
@@ -226,14 +239,6 @@ const ProfileScreen = ({ navigation }) => {
               >
                 <MaterialCommunityIcons name="logout" size={20} color={theme.TEXT_SECONDARY} />
                 <Text style={[styles.logoutText, { color: theme.TEXT_SECONDARY }]}>Log Out</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.deleteAccountButton, { backgroundColor: theme.SURFACE, borderColor: theme.ERROR }]}
-                onPress={handleDeleteAccount}
-              >
-                <MaterialCommunityIcons name="account-remove" size={20} color={theme.ERROR} />
-                <Text style={[styles.deleteAccountText, { color: theme.ERROR }]}>Delete Account</Text>
               </TouchableOpacity>
             </>
           )}
@@ -371,26 +376,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   logoutText: {
-    fontSize: 16,
-    fontFamily: 'IBMPlexSans_500Medium',
-    marginLeft: 10,
-  },
-  deleteAccountButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 15,
-    borderRadius: 15,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    borderWidth: 1,
-  },
-  deleteAccountText: {
     fontSize: 16,
     fontFamily: 'IBMPlexSans_500Medium',
     marginLeft: 10,

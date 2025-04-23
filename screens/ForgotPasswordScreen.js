@@ -130,7 +130,7 @@ const ForgotPasswordScreen = ({ navigation }) => {
                 />
               </View>
               {errors.email && (
-                <Text style={[styles.errorText, { color: theme.ERROR }]}>
+                <Text style={[styles.errorText, { color: theme.ERROR_LIGHT || '#ff6b6b' }]}>
                   {errors.email}
                 </Text>
               )}
@@ -174,18 +174,19 @@ const styles = StyleSheet.create({
   },
   header: {
     marginTop: StatusBar.currentHeight || 40,
-    marginBottom: 40,
+    marginBottom: 20,
     alignItems: 'center',
   },
   backButton: {
     alignSelf: 'flex-start',
     marginBottom: 20,
-    paddingVertical: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
   },
   logoContainer: {
     width: 100,
     height: 100,
-    marginBottom: 24,
+    marginBottom: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -242,6 +243,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'IBMPlexSans_400Regular',
     marginTop: 8,
+    color: '#ff6b6b',
   },
   buttonContainer: {
     width: '85%',
