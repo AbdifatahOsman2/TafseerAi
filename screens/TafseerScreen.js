@@ -100,9 +100,25 @@ const TafseerScreen = ({ route, navigation }) => {
       }
     };
     
-    // Save API key on app start
-    aiService.saveApiKey();
+    // Ensure the API key is saved - this helps in production builds
+    const initializeApiKey = async () => {
+      try {
+        // Try to save API key
+        const success = await aiService.saveApiKey();
+        
+        // If environment variable API key wasn't available, store the fallback
+        if (!success) {
+          // Use hardcoded key - must match the one in aiService.js
+          const fallbackKey = 'AIzaSyBwSyxKE_Hlqjo4wJf76PkhOa-XT_KtTLk';
+          await AsyncStorage.setItem('GEMINI_API_KEY', fallbackKey);
+        }
+      } catch (error) {
+        // Silent fail
+      }
+    };
     
+    // Run initialization
+    initializeApiKey();
     loadChatHistory();
     fetchSurahs();
   }, [route.params]);

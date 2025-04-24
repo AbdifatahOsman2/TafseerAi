@@ -70,32 +70,28 @@ const OnboardingScreen = ({ navigation }) => {
       // Set guest mode based on user choice
       await setGuestMode(asGuest);
       
-      // Reset navigation to the appropriate screen
-      navigation.dispatch(
-        CommonActions.reset({
+      // Use a simpler navigation reset that's more reliable
+      if (asGuest) {
+        // If guest, go straight to the main app
+        navigation.reset({
           index: 0,
-          routes: [
-            { 
-              name: 'Main',
-              state: {
-                routes: [
-                  {
-                    name: asGuest ? 'MainApp' : 'Auth',
-                    state: asGuest ? {
-                      routes: [{ name: 'Home' }]
-                    } : {
-                      routes: [{ name: 'Login' }]
-                    }
-                  }
-                ]
-              }
-            },
-          ],
-        })
-      );
+          routes: [{ name: 'Main' }],
+        });
+      } else {
+        // If not guest, go to login
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Main' }],
+        });
+        
+        // Add a small delay before navigating to login to ensure state changes are processed
+        setTimeout(() => {
+          navigation.navigate('Auth', { screen: 'Login' });
+        }, 100);
+      }
     } catch (error) {
       console.error("Error completing onboarding:", error);
-      // Fallback navigation if the complex reset fails
+      // Fallback navigation
       navigation.reset({
         index: 0,
         routes: [{ name: 'Main' }],

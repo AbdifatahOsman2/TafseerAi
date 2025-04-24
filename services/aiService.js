@@ -20,9 +20,17 @@ const aiService = {
         apiKey = await AsyncStorage.getItem('GEMINI_API_KEY');
       }
 
-      // If still no API key, use a hardcoded fallback (should be set during app initialization)
+      // If still no API key, use a hardcoded fallback
       if (!apiKey) {
-        throw new Error('No API key available');
+        // Use the same key as in .env as fallback
+        apiKey = 'AIzaSyBwSyxKE_Hlqjo4wJf76PkhOa-XT_KtTLk';
+        
+        // Try to save it for future use
+        try {
+          await AsyncStorage.setItem('GEMINI_API_KEY', apiKey);
+        } catch (error) {
+          // Silent fail if we can't save
+        }
       }
 
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
