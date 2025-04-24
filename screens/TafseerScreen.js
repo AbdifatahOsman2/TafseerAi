@@ -100,20 +100,13 @@ const TafseerScreen = ({ route, navigation }) => {
       }
     };
     
-    // Ensure the API key is saved - this helps in production builds
+    // Super simplified API key initialization
     const initializeApiKey = async () => {
       try {
-        // Try to save API key
-        const success = await aiService.saveApiKey();
-        
-        // If environment variable API key wasn't available, store the fallback
-        if (!success) {
-          // Use hardcoded key - must match the one in aiService.js
-          const fallbackKey = 'AIzaSyBwSyxKE_Hlqjo4wJf76PkhOa-XT_KtTLk';
-          await AsyncStorage.setItem('GEMINI_API_KEY', fallbackKey);
-        }
+        // Just call saveApiKey - it now always saves the fallback key
+        await aiService.saveApiKey();
       } catch (error) {
-        // Silent fail
+        // Silently fail
       }
     };
     
@@ -299,7 +292,7 @@ const TafseerScreen = ({ route, navigation }) => {
         `;
       }
       
-      // Use the aiService to generate content
+      // Use the aiService to generate content with simplified error handling
       let aiResponseText = await aiService.generateContent(enhancedUserMessage);
       
       // Process the response to replace "God" with "ﷲ"
@@ -325,15 +318,14 @@ const TafseerScreen = ({ route, navigation }) => {
       });
       
     } catch (error) {
-      // Error handling without console.error
-      // Add error message with unique ID
+      // Handle errors gracefully with a user-friendly message
       const generalErrorId = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       setMessages(prevMessages => {
         const newMessages = [
           ...prevMessages, 
           {
             id: generalErrorId,
-            text: "I'm sorry, I couldn't process your request. Please try again.",
+            text: "I'm sorry, I couldn't process your request. Please check your internet connection and try again.",
             sender: 'ai'
           }
         ];

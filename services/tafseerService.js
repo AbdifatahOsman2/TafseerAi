@@ -149,10 +149,24 @@ export const generateInitialAyahExplanation = async (surah, ayah, translation) =
       Arabic Text: ${ayah.text}
       Translation: ${translation || "Translation not available"}
       
-      Focus on:
-      1. The general meaning of the verse
-      2. Historical context if relevant
-      3. Key lessons and guidance
+Key Points to Address:
+Meaning & Interpretation – Explain the verse's core message, linguistic nuances, and possible interpretations.
+
+Historical & Revelatory Context – When/why was this verse revealed? Does it relate to specific events, questions, or challenges?
+
+Theological & Ethical Guidance – What key lessons, rulings, or moral principles does it convey?
+
+Comparative Analysis (if applicable) – How do different scholars (mufassirun) interpret this verse? Are there notable differences?
+
+Practical Application – How can this verse be applied in personal, social, or spiritual life today?
+
+Additional Notes (Optional):
+
+Mention any qira’at (recitation variants) if relevant.
+
+Highlight connections to other Quranic verses (munasabat al-ayat).
+
+Keep explanations evidence-based, citing classical (mufassirun) or contemporary scholars where applicable.
     `;
     
     // In a real implementation, this would call the Gemini API
