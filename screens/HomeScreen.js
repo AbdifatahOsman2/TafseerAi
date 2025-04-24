@@ -16,14 +16,25 @@ import { useUser } from '../context/UserContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as bookmarkService from '../services/bookmarkService';
 import * as userActivityService from '../services/userActivityService';
+import verseService from '../services/verseService';
 
 const HomeScreen = ({ navigation }) => {
   const { theme } = useTheme();
   const { user, isGuest } = useUser();
   const [bookmarksCount, setBookmarksCount] = useState(0);
-  const [daysActive, setDaysActive] = useState(1);
+  const [daysActive, setDaysActive] = useState(0);
   const [lastVisit, setLastVisit] = useState(null);
-  const [userStats, setUserStats] = useState(null);
+  const [userStats, setUserStats] = useState({
+    totalSurahsVisited: 0,
+    totalTime: 0
+  });
+  const [dailyVerse, setDailyVerse] = useState({
+    arabic: "",
+    translation: "Loading...",
+    surah: "",
+    ayahNumber: 0,
+    surahNumber: 0
+  });
 
   // Format time to display in a friendly way
   const formatTotalTime = (minutes) => {
@@ -49,19 +60,10 @@ const HomeScreen = ({ navigation }) => {
     return date.toLocaleDateString();
   };
 
-  // Sample daily verse - in a real app, this would come from an API or local database
-  // and would change daily
-  const dailyVerse = {
-    arabic: "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ",
-    translation: "Allah - there is no deity except Him, the Ever-Living, the Sustainer of existence.",
-    surah: "Al-Baqarah",
-    ayahNumber: 255,
-    surahNumber: 2
-  };
-
   useEffect(() => {
     // Load user stats and track activity
     loadUserStats();
+    loadDailyVerse();
   }, [user, isGuest]); // Re-run when user or guest status changes
 
   // Load user stats from appropriate storage
@@ -92,6 +94,16 @@ const HomeScreen = ({ navigation }) => {
       setBookmarksCount(loadedBookmarks.length);
     } catch (error) {
       // Error handling without console.error
+    }
+  };
+
+  // Load daily verse from the service
+  const loadDailyVerse = async () => {
+    try {
+      const verse = await verseService.getDailyVerse();
+      setDailyVerse(verse);
+    } catch (error) {
+      // Error handling
     }
   };
 

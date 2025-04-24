@@ -32,6 +32,10 @@ import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { ReciterProvider } from './context/ReciterContext';
 // Import User Provider
 import { UserProvider, useUser } from './context/UserContext';
+import aiService from './services/aiService';
+
+// Initialize the API key
+aiService.saveApiKey();
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();

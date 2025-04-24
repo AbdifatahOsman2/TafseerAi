@@ -24,6 +24,35 @@ const TafseerDetailScreen = ({ route, navigation }) => {
     tafseerContent
   } = route.params;
 
+  // Function to parse and format tafseer content
+  const parseTafseerContent = (content) => {
+    if (!content) return "Tafseer content is not available for this ayah.";
+    
+    // Split paragraphs (keep double newlines as paragraph breaks)
+    const paragraphs = content.split(/\n\s*\n/);
+    
+    return paragraphs.map((paragraph, index) => {
+      // Bold the word "Allah"
+      const formattedText = paragraph.replace(/\bAllah\b/g, "*Allah*");
+      
+      // Split the paragraph into segments to bold the word "Allah"
+      const segments = formattedText.split('*');
+
+      return (
+        <Text key={index} style={[styles.tafseerParagraph, { color: theme.TEXT_PRIMARY }]}>
+          {segments.map((segment, idx) => {
+            // Every odd index is bold (1, 3, 5, etc.)
+            return idx % 2 === 1 ? (
+              <Text key={idx} style={styles.boldText}>{segment}</Text>
+            ) : (
+              <Text key={idx}>{segment}</Text>
+            );
+          })}
+        </Text>
+      );
+    });
+  };
+
   // Function to handle the "Chat with AI" button
   const handleAiTafseer = () => {
     try {
@@ -113,9 +142,9 @@ const TafseerDetailScreen = ({ route, navigation }) => {
             Classical Tafseer
           </Text>
           
-          <Text style={[styles.tafseerContent, { color: theme.TEXT_PRIMARY }]}>
-            {tafseerContent || "Tafseer content is not available for this ayah."}
-          </Text>
+          <View style={styles.tafseerContentContainer}>
+            {parseTafseerContent(tafseerContent)}
+          </View>
         </View>
         
         {/* Chat with AI Button */}
@@ -227,11 +256,23 @@ const styles = StyleSheet.create({
     fontFamily: 'IBMPlexSans_600SemiBold',
     marginBottom: 16,
   },
-  tafseerContent: {
+  tafseerContentContainer: {
+    backgroundColor: 'rgba(0,0,0,0.02)',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
+  },
+  tafseerParagraph: {
     fontSize: 16,
     lineHeight: 26,
     fontFamily: 'IBMPlexSans_400Regular',
     textAlign: 'left',
+    marginBottom: 16,
+  },
+  boldText: {
+    fontFamily: 'IBMPlexSans_700Bold',
+    fontWeight: 'bold',
   },
   chatWithAiButton: {
     flexDirection: 'row',

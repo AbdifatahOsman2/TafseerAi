@@ -75,12 +75,31 @@ const OnboardingScreen = ({ navigation }) => {
         CommonActions.reset({
           index: 0,
           routes: [
-            { name: asGuest ? 'Main' : 'Login' },
+            { 
+              name: 'Main',
+              state: {
+                routes: [
+                  {
+                    name: asGuest ? 'MainApp' : 'Auth',
+                    state: asGuest ? {
+                      routes: [{ name: 'Home' }]
+                    } : {
+                      routes: [{ name: 'Login' }]
+                    }
+                  }
+                ]
+              }
+            },
           ],
         })
       );
     } catch (error) {
-      // Handle errors silently
+      console.error("Error completing onboarding:", error);
+      // Fallback navigation if the complex reset fails
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Main' }],
+      });
     }
   };
 

@@ -16,6 +16,12 @@
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "appleId": "abdifatahosman205@gmail.com",
+        "ascAppId": "6744960657",
+        "appleTeamId": "YTYH5B54ZJ"
+      }
+    }
   }
 }

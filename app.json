@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1E2128"
+      "backgroundColor": "#1E1E1F"
     },
     "ios": {
       "supportsTablet": true,
@@ -22,7 +22,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1E2128"
+        "backgroundColor": "#1E1E1F"
       },
       "package": "com.hygalac.TafseerAi"
     },

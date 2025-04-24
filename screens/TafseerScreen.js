@@ -24,6 +24,7 @@ import { useTheme } from '../context/ThemeContext';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { GEMINI_API_KEY } from '@env';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import aiService from '../services/aiService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -98,6 +99,9 @@ const TafseerScreen = ({ route, navigation }) => {
         // Error handling without console.error
       }
     };
+    
+    // Save API key on app start
+    aiService.saveApiKey();
     
     loadChatHistory();
     fetchSurahs();
@@ -279,42 +283,8 @@ const TafseerScreen = ({ route, navigation }) => {
         `;
       }
       
-      // Call the Gemini API directly
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: enhancedUserMessage }]
-            }
-          ],
-          generationConfig: {
-            temperature: 0.4,
-            topK: 32,
-            topP: 0.95,
-            maxOutputTokens: 800,
-          }
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      let aiResponseText = "I couldn't generate a response. Please try again.";
-      
-      if (data.candidates && 
-          data.candidates[0] && 
-          data.candidates[0].content && 
-          data.candidates[0].content.parts && 
-          data.candidates[0].content.parts[0]) {
-        aiResponseText = data.candidates[0].content.parts[0].text;
-      }
+      // Use the aiService to generate content
+      let aiResponseText = await aiService.generateContent(enhancedUserMessage);
       
       // Process the response to replace "God" with "ﷲ"
       aiResponseText = processAIResponse(aiResponseText);
