@@ -52,6 +52,9 @@ const SurahDetailScreen = ({ route, navigation }) => {
   // Flag to track if we need to scroll to an ayah after content loads
   const [shouldScrollToAyah, setShouldScrollToAyah] = useState(scrollToAyah ? true : false);
   const [isTafseerLoading, setIsTafseerLoading] = useState(false);
+  
+  // Bookmark tracking state
+  const [bookmarkedAyahs, setBookmarkedAyahs] = useState(new Set());
 
   // Modal animation states
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -165,6 +168,65 @@ const SurahDetailScreen = ({ route, navigation }) => {
       return () => clearTimeout(timer);
     }
   }, [loading, shouldScrollToAyah, scrollToAyah, surahContent]);
+
+  // Effect to handle audio cleanup when screen loses focus
+  useEffect(() => {
+    if (!isFocused) {
+      // Stop all audio when screen loses focus
+      const cleanupAudio = async () => {
+        try {
+          if (soundRef.current) {
+            await soundRef.current.stopAsync();
+            await soundRef.current.unloadAsync();
+            soundRef.current = null;
+          }
+          if (surahSoundRef.current) {
+            await surahSoundRef.current.stopAsync();
+            await surahSoundRef.current.unloadAsync();
+            surahSoundRef.current = null;
+          }
+          setIsPlaying(false);
+          setIsSurahPlaying(false);
+          setCurrentAyahPlaying(0);
+          setAyahsToPlay([]);
+        } catch (error) {
+          // Silently handle cleanup errors
+        }
+      };
+      
+      cleanupAudio();
+    }
+  }, [isFocused]);
+
+  // Load bookmark status for all ayahs when content loads
+  useEffect(() => {
+    const loadBookmarkStatus = async () => {
+      if (surahContent && surahContent.ayahs) {
+        try {
+          const bookmarked = new Set();
+          
+          // Check each ayah's bookmark status
+          for (const ayah of surahContent.ayahs) {
+            const isBookmarked = await bookmarkService.isBookmarked(
+              ayah,
+              surahContent.number,
+              user,
+              isGuest
+            );
+            if (isBookmarked) {
+              bookmarked.add(ayah.number);
+            }
+          }
+          
+          setBookmarkedAyahs(bookmarked);
+        } catch (error) {
+          // Error handling without console.error
+        }
+      }
+    };
+    
+    loadBookmarkStatus();
+  }, [surahContent, user, isGuest]);
 
   // Function to scroll to a specific ayah
   const scrollToAyahNumber = (ayahNumber) => {
@@ -873,12 +935,7 @@ const SurahDetailScreen = ({ route, navigation }) => {
       };
       
       // Check if this ayah is already bookmarked
-      const isAlreadyBookmarked = await bookmarkService.isBookmarked(
-        ayah, 
-        surahContent.number, 
-        user, 
-        isGuest
-      );
+      const isAlreadyBookmarked = bookmarkedAyahs.has(ayah.number);
       
       let success;
       
@@ -886,13 +943,29 @@ const SurahDetailScreen = ({ route, navigation }) => {
         // Remove from bookmarks if already exists
         success = await bookmarkService.removeBookmark(bookmark, user, isGuest);
         if (success) {
-          Alert.alert('Bookmark Removed', 'Ayah has been removed from your bookmarks.');
+          // Update local state to remove bookmark
+          setBookmarkedAyahs(prev => {
+            const updated = new Set(prev);
+            updated.delete(ayah.number);
+            return updated;
+          });
+          
+          // Provide haptic feedback
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
       } else {
         // Add to bookmarks
         success = await bookmarkService.saveBookmark(bookmark, user, isGuest);
         if (success) {
-          Alert.alert('Bookmark Added', 'Ayah has been added to your bookmarks.');
+          // Update local state to add bookmark
+          setBookmarkedAyahs(prev => {
+            const updated = new Set(prev);
+            updated.add(ayah.number);
+            return updated;
+          });
+          
+          // Provide haptic feedback
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
       }
       
@@ -903,8 +976,8 @@ const SurahDetailScreen = ({ route, navigation }) => {
       // Close the menu
       closeMenu();
     } catch (error) {
-      // Error handling without console.error
-      Alert.alert('Error', 'Failed to update bookmarks. Please try again.');
+      // Error handling without console.error - just haptic feedback for error
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   };
 
@@ -1211,9 +1284,13 @@ const SurahDetailScreen = ({ route, navigation }) => {
                         style={styles.actionButton}
                         onPress={() => handleBookmark(selectedAyah)}
                       >
-                        <MaterialCommunityIcons name="bookmark-outline" size={28} color={theme.PRIMARY} />
+                        <MaterialCommunityIcons 
+                          name={selectedAyah && bookmarkedAyahs.has(selectedAyah.number) ? "bookmark" : "bookmark-outline"} 
+                          size={28} 
+                          color={selectedAyah && bookmarkedAyahs.has(selectedAyah.number) ? theme.PRIMARY : theme.TEXT_SECONDARY} 
+                        />
                         <Text style={[styles.actionButtonText, { color: theme.TEXT_PRIMARY }]}>
-                          Bookmark
+                          {selectedAyah && bookmarkedAyahs.has(selectedAyah.number) ? "Bookmarked" : "Bookmark"}
                         </Text>
                       </TouchableOpacity>
                       
@@ -1575,7 +1652,9 @@ const styles = StyleSheet.create({
   tafseerText: {
     fontSize: 15,
     fontFamily: 'IBMPlexSans_400Regular',
-    lineHeight: 22,
+    lineHeight: 24,
+    textAlign: 'left',
+    marginBottom: 8,
   },
   tafseerLoading: {
     alignItems: 'center',

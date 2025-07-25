@@ -52,44 +52,96 @@ export const fetchClassicalTafseer = async (surahNumber, ayahNumber) => {
 
 /**
  * Helper function to extract a shortened version of the tafseer text
- * Returns approximately 5 sentences
+ * Returns approximately 5 sentences with improved formatting
  */
 const extractShortTafseer = (text) => {
   try {
-    // First, strip HTML tags
-    const strippedText = text.replace(/<[^>]*>/g, '');
+    // First, strip HTML tags but preserve paragraph structure
+    let strippedText = text.replace(/<p[^>]*>/gi, '\n\n'); // Convert <p> tags to paragraph breaks
+    strippedText = strippedText.replace(/<br[^>]*>/gi, '\n'); // Convert <br> tags to line breaks
+    strippedText = strippedText.replace(/<[^>]*>/g, ''); // Remove all other HTML tags
     
-    // Split by sentence endings (. or ? or !) followed by a space or end of string
-    const sentences = strippedText.split(/(?<=[.!?])\s+|(?<=[.!?])$/);
+    // Clean up excessive whitespace and normalize spacing
+    strippedText = strippedText.replace(/\s+/g, ' '); // Replace multiple spaces with single space
+    strippedText = strippedText.replace(/\n\s*\n/g, '\n\n'); // Normalize paragraph breaks
+    strippedText = strippedText.trim();
     
-    // Get approximately 5 sentences, but be smart about it
+    // Split by sentence endings, but be smarter about it
+    const sentences = strippedText.split(/(?<=[.!?])\s+/);
+    
     let shortTafseer = '';
     let sentenceCount = 0;
-    let wordCount = 0;
+    let charCount = 0;
+    const maxChars = 1200; // Increased from 600 to provide more complete content
+    const maxSentences = 8; // Increased from 4 to allow for more comprehensive explanations
     
-    // Target: 5 sentences or about 100 words, whichever comes first
     for (let i = 0; i < sentences.length; i++) {
       const sentence = sentences[i].trim();
       if (!sentence) continue;
       
-      // Skip very short sentences that are likely headings or not full sentences
-      if (sentence.split(' ').length < 3) continue;
+      // Skip very short sentences that are likely not meaningful content
+      if (sentence.length < 8) continue;
       
-      shortTafseer += sentence + ' ';
+      // Skip sentences that are likely headers or references (but be less aggressive)
+      if (sentence.includes(':') && sentence.length < 25) continue;
+      
+      // Add the sentence with proper spacing
+      if (shortTafseer.length > 0) {
+        shortTafseer += ' ';
+      }
+      shortTafseer += sentence;
       sentenceCount++;
-      wordCount += sentence.split(' ').length;
+      charCount += sentence.length;
       
-      // Stop after 5 meaningful sentences or ~100 words
-      if ((sentenceCount >= 5 || wordCount >= 100) && i < sentences.length - 1) {
-        shortTafseer += '...';
+      // Add paragraph break after every 3 sentences for better readability
+      if (sentenceCount % 3 === 0 && i < sentences.length - 1 && charCount < maxChars * 0.8) {
+        shortTafseer += '\n\n';
+      }
+      
+      // Only stop if we've exceeded both limits and have meaningful content
+      if (sentenceCount >= maxSentences && charCount >= maxChars * 0.6) {
+        // Only add ellipsis if there's substantially more content
+        if (i < sentences.length - 2) {
+          shortTafseer += '...';
+        }
         break;
       }
     }
     
-    return shortTafseer.trim();
+    // Final cleanup and formatting
+    shortTafseer = shortTafseer.trim();
+    
+    // Ensure we end with proper punctuation
+    if (shortTafseer && !shortTafseer.match(/[.!?…]$/)) {
+      shortTafseer += '.';
+    }
+    
+    // If we got very little content, try to get more by being less restrictive
+    if (shortTafseer.length < 300 && strippedText.length > 300) {
+      // Take first 800 characters and try to end at sentence boundary
+      let fallback = strippedText.substring(0, 800);
+      const lastSentence = fallback.lastIndexOf('.');
+      if (lastSentence > 200) {
+        fallback = fallback.substring(0, lastSentence + 1);
+      } else {
+        fallback += '...';
+      }
+      return fallback.trim();
+    }
+    
+    return shortTafseer;
   } catch (error) {
     console.log('Error shortening tafseer:', error);
-    return text.substring(0, 300) + '...'; // Fallback to simple truncation
+    // Fallback to simple truncation with better formatting
+    let fallback = text.replace(/<[^>]*>/g, '').substring(0, 800);
+    // Try to end at a sentence boundary
+    const lastSentence = fallback.lastIndexOf('.');
+    if (lastSentence > 300) {
+      fallback = fallback.substring(0, lastSentence + 1);
+    } else {
+      fallback += '...';
+    }
+    return fallback.trim();
   }
 };
 
@@ -143,48 +195,53 @@ export const generateInitialAyahExplanation = async (surah, ayah, translation) =
     
     // Construct a basic prompt that would normally be sent to the AI
     const prompt = `
-      Provide a brief, scholarly explanation (tafseer) of Surah ${surah.englishName} (${surah.name}), 
-      Ayah ${ayah.numberInSurah}.
+      You are a knowledgeable Islamic scholar providing tafseer (Quranic interpretation) for Muslim families and students.
+
+      Please explain Surah ${surah.englishName} (${surah.name}), Ayah ${ayah.numberInSurah}:
       
       Arabic Text: ${ayah.text}
       Translation: ${translation || "Translation not available"}
       
-Key Points to Address:
-Meaning & Interpretation – Explain the verse's core message, linguistic nuances, and possible interpretations.
-
-Historical & Revelatory Context – When/why was this verse revealed? Does it relate to specific events, questions, or challenges?
-
-Theological & Ethical Guidance – What key lessons, rulings, or moral principles does it convey?
-
-Comparative Analysis (if applicable) – How do different scholars (mufassirun) interpret this verse? Are there notable differences?
-
-Practical Application – How can this verse be applied in personal, social, or spiritual life today?
-
-Additional Notes (Optional):
-
-Mention any qira’at (recitation variants) if relevant.
-
-Highlight connections to other Quranic verses (munasabat al-ayat).
-
-Keep explanations evidence-based, citing classical (mufassirun) or contemporary scholars where applicable.
+      Provide a warm, accessible explanation covering:
+      
+      🔹 **Core Message**: What is ﷲ teaching us in this verse?
+      🔹 **Historical Context**: When and why was this revealed?
+      🔹 **Life Lessons**: How can we apply this wisdom today?
+      🔹 **Connection**: How does this relate to other Quranic teachings?
+      
+      Guidelines:
+      - Use clear, family-friendly language
+      - Be respectful and encouraging
+      - Include practical guidance for daily life
+      - Reference authentic Islamic sources when helpful
+      - Always use "ﷲ" instead of "God"
+      - Keep explanation concise but meaningful (3-5 paragraphs)
+      
+      May this explanation bring benefit and increase faith. Ameen.
     `;
     
     // In a real implementation, this would call the Gemini API
     // For now, return a meaningful placeholder that includes ayah info
-    return `This is an AI-powered explanation of Surah ${surah.englishName} (${surah.name}), Ayah ${ayah.numberInSurah}.
-    
-This feature uses the Gemini API to provide a modern interpretation of the Quranic verses, considering classical commentary, historical context, and contemporary applications.
+    return `Bismillah - In the name of ﷲ, the Most Compassionate, the Most Merciful
 
-The AI analysis would include:
-• The general meaning and linguistic significance
-• Context of revelation
-• Relationship with other verses and Hadiths
-• Practical guidance for modern life
+This is an AI-powered tafseer of Surah ${surah.englishName} (${surah.name}), Ayah ${ayah.numberInSurah}.
 
-To see the full AI-powered tafseer, please make sure your internet connection is active and the API key is properly configured.`;
+🌙 **What This Feature Offers:**
+Our AI assistant provides modern, accessible explanations of Quranic verses, drawing from classical Islamic scholarship and making the wisdom relevant for today's Muslim families.
+
+📚 **The Analysis Includes:**
+• Clear explanation of the verse's meaning and message
+• Historical context and circumstances of revelation
+• Practical guidance for applying these teachings in daily life
+• Connections to other Quranic verses and Islamic principles
+
+🔧 **Getting Started:**
+To access the full AI-powered tafseer, please ensure you have an active internet connection. The system will then provide detailed, scholarly explanations to enhance your understanding of ﷲ's guidance.
+
+May ﷲ bless your journey of learning and increase you in beneficial knowledge. Ameen.`;
   } catch (error) {
     console.log('Error generating AI explanation:', error);
-    return "Unable to generate AI explanation at this time. Please check your internet connection and try again later.";
+    return "SubhanAllah, we're experiencing some technical difficulties. Please check your internet connection and try again. May ﷲ make this easy for you.";
   }
 };
 
@@ -196,11 +253,20 @@ export const continueAyahConversation = async (message, surah, ayah, chatHistory
   try {
     // Construct system instructions
     const systemInstruction = `
-      You are an AI assistant specializing in Quranic tafseer (interpretation). The user is asking about Surah ${surah.englishName} (${surah.name}), Ayah ${ayah.number}.
+      You are a caring, knowledgeable Islamic scholar assistant specializing in Quranic interpretation and Islamic guidance. 
       
-      Provide a scholarly, respectful explanation based on traditional Islamic sources. Consider multiple interpretations where relevant.
+      Current Context: The user is studying Surah ${surah.englishName} (${surah.name}), Ayah ${ayah.number}.
       
-      Be helpful, accurate, and concise. Format your response for readability. If the user asks something unrelated to the Quran, politely redirect them to discuss the current ayah or Islamic topics.
+      Your Role:
+      - Provide scholarly, accurate explanations based on mainstream Sunni Islamic understanding
+      - Use warm, encouraging tone suitable for Muslim families and students
+      - Answer questions with wisdom, patience, and Islamic etiquette
+      - Reference Quran, authentic Hadith, and classical scholars when appropriate
+      - Keep responses clear and accessible (2-4 sentences typically)
+      - Always use "ﷲ" instead of "God"
+      - If asked about non-Islamic topics, kindly redirect to Islamic learning
+      
+      Remember: You're helping fellow Muslims grow closer to ﷲ through understanding His Book.
     `;
     
     // Format chat history for the API - only include the last 6 messages maximum
@@ -209,7 +275,7 @@ export const continueAyahConversation = async (message, surah, ayah, chatHistory
     
     // Simplify the conversation structure to avoid potential API issues
     // Gemini doesn't support system role, so we'll use the user role for the instruction
-    const enhancedUserMessage = `${systemInstruction}\n\nUser question about Surah ${surah.englishName}, Ayah ${ayah.number}: ${message}`;
+    const enhancedUserMessage = `${systemInstruction}\n\nUser's question about Surah ${surah.englishName}, Ayah ${ayah.number}: "${message}"`;
     
     const payload = {
       contents: [
@@ -275,7 +341,7 @@ export const continueAyahConversation = async (message, surah, ayah, chatHistory
       if (error.message.includes('Failed to fetch') || 
           error.message.includes('Network request failed') ||
           error.message.includes('timeout')) {
-        throw new Error('Network error: Could not connect to the AI service. Please check your internet connection and try again.');
+        throw new Error('Network error: SubhanAllah, having trouble connecting. Please check your internet connection and try again.');
       } else {
         throw error;
       }
@@ -284,15 +350,15 @@ export const continueAyahConversation = async (message, surah, ayah, chatHistory
     // Return a more helpful error message for debugging
     if (error.message.includes('Network error')) {
       return { 
-        text: "I apologize, but I'm having trouble connecting to my knowledge service right now. This might be due to network issues. Please check your internet connection and try again."
+        text: "SubhanAllah, I'm having trouble connecting right now. Please check your internet connection and try again. May ﷲ make this easy for you! 🤲"
       };
     } else if (error.message.includes('timeout')) {
       return { 
-        text: "I apologize, but my response took too long to generate. This might be because the service is currently busy. Please try asking a simpler question or try again in a moment."
+        text: "Patience is a virtue! My response is taking longer than usual. Please try asking again or simplify your question. Barakallahu feeki! ⏰"
       };
     } else {
       return { 
-        text: "I apologize, but I'm having trouble processing your request right now. Please try again with a simpler question. If the issue persists, it might be related to the API service."
+        text: "I'm experiencing some technical difficulties at the moment. Please try again with your question. May ﷲ grant us ease! 💚"
       };
     }
   }

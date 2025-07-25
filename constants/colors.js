@@ -10,7 +10,7 @@ export const COLORS = {
   SHADOW: 'rgba(0, 0, 0, 0.08)',   // Light Shadow - Card shadows, elevated elements
   
   // Additional utility colors
-  WHITE: '#FFFFFF',                // Pure white
+  WHITE: '#FAFAFA',                // Soft off-white - easier on the eyes than pure white
   DISABLED: '#CCCCCC',             // Disabled state
 };
 

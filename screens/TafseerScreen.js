@@ -35,7 +35,7 @@ const initialSurahs = [];
 const initialMessages = [
   {
     id: '1',
-    text: 'Welcome to AI Tafseer. Ask me anything about the Quran or any specific Surah. You can select a Surah for context, but feel free to discuss other Surahs or topics at any time. Your conversation history will be preserved even when changing Surahs.',
+    text: 'Assalamu Alaikum! 🌙 Welcome to AI Tafseer, your Islamic learning companion. I\'m here to help you explore and understand the beautiful teachings of the Quran. Feel free to ask about any verse, chapter, or Islamic concept. May ﷲ bless your learning journey!',
     sender: 'ai'
   }
 ];
@@ -63,7 +63,6 @@ const TafseerScreen = ({ route, navigation }) => {
   // Animation State
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
-  const inputOpacity = useRef(new Animated.Value(1)).current;
   const dot1Opacity = useRef(new Animated.Value(0.4)).current;
   const dot2Opacity = useRef(new Animated.Value(0.4)).current;
   const dot3Opacity = useRef(new Animated.Value(0.4)).current;
@@ -152,36 +151,26 @@ const TafseerScreen = ({ route, navigation }) => {
     }
   }, [messages]);
 
-  // Add keyboard listeners
+  // Improved keyboard handling
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener(
-      'keyboardDidShow',
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       (e) => {
         setKeyboardVisible(true);
         setKeyboardHeight(e.endCoordinates.height);
-        Animated.timing(inputOpacity, {
-          toValue: 0.97,
-          duration: 200,
-          useNativeDriver: true,
-        }).start();
         
-        // Scroll to bottom when keyboard appears
+        // Scroll to bottom when keyboard appears with a slight delay
         setTimeout(() => {
           scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, 100);
+        }, Platform.OS === 'ios' ? 50 : 100);
       }
     );
     
     const keyboardDidHideListener = Keyboard.addListener(
-      'keyboardDidHide',
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
       () => {
         setKeyboardVisible(false);
         setKeyboardHeight(0);
-        Animated.timing(inputOpacity, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }).start();
       }
     );
 
@@ -228,8 +217,9 @@ const TafseerScreen = ({ route, navigation }) => {
    * Process AI response text to replace instances of "God" with "ﷲ"
    */
   const processAIResponse = (text) => {
-    // Replace "God" with "ﷲ" (Allah in Arabic calligraphy)
-    return text.replace(/\bGod\b/g, "ﷲ");
+    // This function is kept for backward compatibility
+    // The actual formatting is now handled by processAIResponseFormatting
+    return text;
   };
 
   /**
@@ -259,44 +249,17 @@ const TafseerScreen = ({ route, navigation }) => {
     saveChatHistory(updatedMessages);
 
     try {
-      // Determine if we should include the current surah context
-      let enhancedUserMessage;
-      
-      if (currentChatSurah) {
-        // If we have a current surah selected, mention it but don't restrict to it
-        enhancedUserMessage = `
-          Context: The user has currently selected Surah ${currentChatSurah.englishName} (${currentChatSurah.name}), 
-          but they may be asking about any surah or general Quranic knowledge.
-          
-          User question: ${textToSend}
-          
-          Answer the question directly. If it's about the currently selected surah, provide specific details.
-          If it's about another surah or a general Quranic topic, answer that accordingly without restricting to the current surah.
-          
-          Format your response in 3-5 concise sentences, being scholarly and helpful.
-          
-          IMPORTANT: Always use "ﷲ" (Allah) instead of "God" in your response.
-        `;
-      } else {
-        // General Quran prompt if no surah is selected
-        enhancedUserMessage = `
-          The user is asking a general question about the Quran or Islamic principles.
-          Provide a scholarly, concise response based on mainstream Islamic understanding.
-          
-          User question: ${textToSend}
-          
-          Keep your response focused on the Quran's teachings, themes, contexts, or other relevant aspects.
-          Format your response in 3-5 sentences, being helpful but brief.
-          
-          IMPORTANT: Always use "ﷲ" (Allah) instead of "God" in your response.
-        `;
-      }
+      // Create comprehensive prompt based on context
+      const enhancedUserMessage = createComprehensivePrompt(textToSend, currentChatSurah);
       
       // Use the aiService to generate content with simplified error handling
       let aiResponseText = await aiService.generateContent(enhancedUserMessage);
       
       // Process the response to replace "God" with "ﷲ"
       aiResponseText = processAIResponse(aiResponseText);
+      
+      // Process formatting for readability
+      aiResponseText = processAIResponseFormatting(aiResponseText);
       
       // Add AI response to messages with unique ID
       const aiMessageId = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -325,7 +288,7 @@ const TafseerScreen = ({ route, navigation }) => {
           ...prevMessages, 
           {
             id: generalErrorId,
-            text: "I'm sorry, I couldn't process your request. Please check your internet connection and try again.",
+            text: "SubhanAllah, I'm having some difficulty responding right now. Please check your internet connection and try asking again. May ﷲ make this easy for you! 🤲",
             sender: 'ai'
           }
         ];
@@ -346,6 +309,191 @@ const TafseerScreen = ({ route, navigation }) => {
     Keyboard.dismiss();
   };
 
+  /**
+   * Create comprehensive prompt for AI based on query type and context
+   */
+  const createComprehensivePrompt = (userQuery, surahContext) => {
+    // Analyze query complexity to determine appropriate response length
+    const queryComplexity = analyzeQueryComplexity(userQuery);
+    
+    const basePrompt = `<goal>
+You are an Islamic scholar assistant specializing in Quranic interpretation, Islamic theology, and spiritual guidance. Your goal is to provide accurate, scholarly, and accessible answers about Islam, the Quran, Hadith, and Islamic principles. You serve Muslims of all backgrounds - from new learners to advanced students - helping them deepen their understanding of their faith.
+
+You must provide responses that are:
+- Grounded in mainstream Sunni Islamic scholarship
+- Accessible to diverse Muslim communities (families, students, converts)
+- Contextually relevant and practically applicable
+- Respectful of traditional Islamic knowledge while being approachable
+</goal>
+
+<format_rules>
+Structure your responses for optimal readability and digestibility:
+
+Response Length Guidelines:
+${queryComplexity.lengthGuideline}
+
+Response Structure:
+- Begin with 1-2 sentences that directly address the user's question
+- Use short, digestible paragraphs (2-3 sentences maximum per paragraph)
+- Add a blank line between paragraphs for better readability
+- Use bullet points sparingly and only for clear lists or steps
+- End with a practical takeaway or encouragement when appropriate
+
+Content Organization:
+- Start with the core answer to the user's question
+- Follow with relevant context or background (if needed)
+- Include practical application or modern relevance
+- Use simple, family-friendly language while maintaining scholarly accuracy
+
+Spacing and Readability:
+- Use double line breaks between major points
+- Keep sentences concise and clear
+- Avoid dense paragraphs - break up long explanations
+- Use natural conversation flow
+
+Quranic References:
+- When citing verses, format as: "Quran 2:255" or "Surah Al-Baqarah, verse 255"
+- Include brief context when referencing verses
+- Use "ﷲ" consistently instead of "God" or "Allah"
+
+Emphasis:
+- Use *italics* for Arabic terms with brief translations: *Bismillah* (In the name of ﷲ)
+- Use **bold** sparingly for key concepts only
+- No excessive formatting or emojis
+</format_rules>
+
+<restrictions>
+NEVER use repetitive Islamic greetings in every response
+NEVER start responses with "As a Muslim" or "In Islam"
+NEVER include disclaimer language like "I am not a scholar" or "Please consult your local imam"
+NEVER provide answers that could be used for sectarian debates
+NEVER give specific legal rulings (fiqh) without acknowledging scholarly differences
+NEVER use overly academic jargon that alienates general audiences
+NEVER repeat the same information if it was covered in recent conversation
+NEVER write wall-of-text responses - always use proper spacing and paragraphs
+</restrictions>
+
+<query_types>
+Based on the user's question type, provide responses tailored to these categories:
+
+${queryComplexity.responseGuidelines}
+
+Quranic Interpretation (Tafseer):
+- Start with the verse's main message
+- Provide historical context if relevant
+- Include practical application for modern life
+- Reference classical commentators when helpful
+
+Islamic History:
+- Present factual historical information clearly
+- Focus on lessons and relevance to modern Muslims
+- Acknowledge when details are debated among historians
+
+Spiritual Guidance:
+- Offer practical, actionable advice
+- Include relevant Quranic verses or authentic Hadith
+- Focus on personal spiritual development
+
+Islamic Practices:
+- Explain the spiritual purpose behind the practice
+- Provide practical guidance for implementation
+- Acknowledge differences in scholarly opinion when relevant
+
+General Islamic Knowledge:
+- Provide clear, accessible explanations
+- Connect concepts to daily Muslim life
+- Use relatable examples
+</query_types>
+
+<context_integration>
+${surahContext ? `Current Context: The user is exploring Surah ${surahContext.englishName} (${surahContext.name}). When relevant, connect responses to this surah's themes and teachings, but don't force connections if the question is about other topics.` : 'The user is asking a general Islamic question. Provide comprehensive guidance without restricting to any specific Quranic chapter.'}
+
+User's Question: "${userQuery}"
+</context_integration>
+
+<output>
+  Provide a well-formatted, properly spaced response that directly addresses the user's question. Your answer should be informative, practical, and encouraging for the user's Islamic learning journey. Use appropriate length based on question complexity, maintain proper paragraph spacing, and ensure the content is digestible and easy to read.
+</output>`;
+
+    return basePrompt;
+  };
+
+  /**
+   * Analyze query complexity to determine appropriate response guidelines
+   */
+  const analyzeQueryComplexity = (query) => {
+    const lowerQuery = query.toLowerCase();
+    
+    // Simple questions (what, who, when, basic definitions)
+    const simpleKeywords = ['what is', 'who is', 'when was', 'how many', 'which', 'define'];
+    const isSimple = simpleKeywords.some(keyword => lowerQuery.includes(keyword)) || query.length < 50;
+    
+    // Complex questions (explain, why, how, detailed analysis)
+    const complexKeywords = ['explain', 'why', 'how does', 'analyze', 'compare', 'discuss', 'elaborate'];
+    const isComplex = complexKeywords.some(keyword => lowerQuery.includes(keyword)) || query.length > 100;
+    
+    // Specific verse or concept questions
+    const hasVerseReference = /\b\d+:\d+\b/.test(query) || lowerQuery.includes('ayah') || lowerQuery.includes('verse');
+    
+    if (isSimple && !isComplex) {
+      return {
+        lengthGuideline: "Keep response brief and direct (1-2 short paragraphs, 2-3 sentences each). Focus on the essential answer without extensive elaboration.",
+        responseGuidelines: "Provide concise, direct answers. Avoid lengthy explanations unless specifically requested."
+      };
+    } else if (isComplex || hasVerseReference) {
+      return {
+        lengthGuideline: "Provide a comprehensive but digestible response (2-4 well-spaced paragraphs, 2-3 sentences each). Include context, explanation, and practical application.",
+        responseGuidelines: "Offer detailed explanations with proper context. Include background information, practical applications, and relevant examples."
+      };
+    } else {
+      return {
+        lengthGuideline: "Provide a balanced response (2-3 paragraphs, 2-3 sentences each). Give sufficient detail while remaining accessible.",
+        responseGuidelines: "Balance detail with accessibility. Provide enough information to be helpful without overwhelming the user."
+      };
+    }
+  };
+
+  /**
+   * Process AI response to ensure proper formatting and readability
+   */
+  const processAIResponseFormatting = (text) => {
+    let processed = text;
+    
+    // Replace "God" with "ﷲ"
+    processed = processed.replace(/\bGod\b/g, "ﷲ");
+    
+    // Ensure proper paragraph spacing
+    processed = processed.replace(/\n\n\n+/g, '\n\n'); // Remove excessive line breaks
+    processed = processed.replace(/([.!?])\s*([A-Z])/g, '$1\n\n$2'); // Add paragraph breaks after sentences before new topics
+    
+    // Clean up common formatting issues
+    processed = processed.replace(/\s+/g, ' '); // Replace multiple spaces with single space
+    processed = processed.replace(/\n\s+/g, '\n'); // Remove spaces after line breaks
+    processed = processed.trim(); // Remove leading/trailing whitespace
+    
+    // Ensure sentences don't run too long without breaks
+    const sentences = processed.split(/(?<=[.!?])\s+/);
+    let formattedText = '';
+    let sentenceCount = 0;
+    
+    for (let i = 0; i < sentences.length; i++) {
+      formattedText += sentences[i];
+      sentenceCount++;
+      
+      if (i < sentences.length - 1) {
+        // Add paragraph break every 2-3 sentences for better readability
+        if (sentenceCount >= 2 && sentences[i + 1] && sentences[i + 1].length > 50) {
+          formattedText += '\n\n';
+          sentenceCount = 0;
+        } else {
+          formattedText += ' ';
+        }
+      }
+    }
+    
+    return formattedText.trim();
+  };
+
   const handleSurahSelect = (surah) => {
     setSelectedSurah(surah);
     setShowSurahModal(false);
@@ -364,14 +512,14 @@ const TafseerScreen = ({ route, navigation }) => {
       // First surah selection
       surahSelectionMessage = {
         id: uniqueId,
-        text: `You've selected Surah ${surah.englishName} (${surah.name}).`,
+        text: `MashaAllah! You've selected Surah ${surah.englishName} (${surah.name}) 📖`,
         sender: 'system'
       };
       
       // Add an AI message that clarifies users can ask about anything
       aiConfirmationMessage = {
         id: uniqueAiId,
-        text: `I can help with Surah ${surah.englishName}, but feel free to ask about any other surah or Islamic topic as well. Your conversation history will be maintained as you explore different topics.`,
+        text: `Excellent choice! I'm here to help you explore Surah ${surah.englishName} and answer any questions you have. Feel free to ask about this surah or any other Islamic topics - I'm here to support your learning journey! 🌟`,
         sender: 'ai',
         showSuggestions: true
       };
@@ -387,14 +535,14 @@ const TafseerScreen = ({ route, navigation }) => {
       // Changing from one surah to another
       surahSelectionMessage = {
         id: uniqueId,
-        text: `You've changed to Surah ${surah.englishName} (${surah.name}). Previous conversation history is preserved.`,
+        text: `Switching to Surah ${surah.englishName} (${surah.name}) 🔄 Your previous conversations are saved.`,
         sender: 'system'
       };
       
       // Add an AI message with suggestions specific to this surah
       aiConfirmationMessage = {
         id: uniqueAiId,
-        text: `Here are some suggested questions about Surah ${surah.englishName}:`,
+        text: `Welcome to Surah ${surah.englishName}! I'm excited to explore this beautiful chapter with you. Here are some questions you might find interesting:`,
         sender: 'ai',
         showSuggestions: true
       };
@@ -683,20 +831,20 @@ const TafseerScreen = ({ route, navigation }) => {
     
     if (item.sender === 'user') {
       containerStyle = [styles.userMessageContainer, { backgroundColor: theme.PRIMARY }];
-      textStyle = [styles.messageText, { color: theme.WHITE, fontFamily: 'IBMPlexSans_400Regular' }];
+      textStyle = [styles.messageText, { color: theme.WHITE }];
     } else if (item.sender === 'ai') {
       containerStyle = [styles.aiMessageContainer, { backgroundColor: theme.SURFACE, borderColor: theme.BORDER }];
-      textStyle = [styles.messageText, { color: theme.TEXT_PRIMARY, fontFamily: 'IBMPlexSans_400Regular' }];
+      textStyle = [styles.messageText, { color: theme.TEXT_PRIMARY }];
     } else {
       containerStyle = [styles.systemMessageContainer, { backgroundColor: theme.SURFACE_SECONDARY }];
-      textStyle = [styles.messageText, { color: theme.TEXT_SECONDARY, fontStyle: 'italic', fontFamily: 'IBMPlexSans_400Regular' }];
+      textStyle = [styles.messageText, { color: theme.TEXT_SECONDARY, fontStyle: 'italic' }];
     }
     
     // Check if text contains Arabic characters
     const containsArabic = /[\u0600-\u06FF]/.test(item.text);
     
     return (
-      <View>
+      <View style={styles.messageWrapper}>
         <View style={[styles.messageRow, { justifyContent: item.sender === 'user' ? 'flex-end' : 'flex-start' }]}>
           <View style={containerStyle}>
             <Text style={[
@@ -704,7 +852,7 @@ const TafseerScreen = ({ route, navigation }) => {
               containsArabic ? { 
                 textAlign: 'right', 
                 writingDirection: 'rtl',
-                fontFamily: 'IBMPlexSans_500Medium'
+                fontWeight: '500'
               } : {}
             ]}>
               {item.text}
@@ -723,7 +871,7 @@ const TafseerScreen = ({ route, navigation }) => {
               {getContextualSuggestions(currentChatSurah, messages).map(suggestion => (
                 <TouchableOpacity
                   key={suggestion.id}
-                  style={[styles.messageSuggestionChip, { backgroundColor: theme.PRIMARY_LIGHT }]}
+                  style={[styles.messageSuggestionChip, { backgroundColor: theme.PRIMARY_LIGHT, borderColor: theme.PRIMARY }]}
                   onPress={() => {
                     // Only set the input message, don't send it automatically
                     setInputMessage(suggestion.text);
@@ -773,35 +921,49 @@ const TafseerScreen = ({ route, navigation }) => {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.BACKGROUND }]}>
       <StatusBar barStyle={theme.DARK ? "light-content" : "dark-content"} />
 
-      <View style={styles.header}>
+      {/* Header */}
+      <View style={[styles.header, { borderBottomColor: theme.BORDER }]}>
         <View style={styles.headerTopRow}>
           <Text style={[styles.screenTitle, { color: theme.TEXT_PRIMARY }]}>Tafseer</Text>
           
-          {/* Add clear history button */}
-          <TouchableOpacity
-            onPress={() => {
-              Alert.alert(
-                "Clear Chat History",
-                "Are you sure you want to clear your chat history? This cannot be undone.",
-                [
-                  {
-                    text: "Cancel",
-                    style: "cancel"
-                  },
-                  { 
-                    text: "Clear", 
-                    onPress: () => {
-                      clearChatHistory();
+          <View style={styles.headerButtons}>
+            {/* Select Surah button - only show when no surah is selected */}
+            {!selectedSurah && (
+              <TouchableOpacity
+                onPress={() => setShowSurahModal(true)}
+                style={[styles.selectSurahHeaderButton, { backgroundColor: theme.PRIMARY }]}
+              >
+                <MaterialCommunityIcons name="book-open-variant" size={16} color={theme.WHITE} />
+                <Text style={[styles.selectSurahHeaderButtonText, { color: theme.WHITE }]}>Select Surah</Text>
+              </TouchableOpacity>
+            )}
+            
+            {/* Clear history button */}
+            <TouchableOpacity
+              onPress={() => {
+                Alert.alert(
+                  "Clear Chat History",
+                  "Are you sure you want to clear your chat history? This cannot be undone.",
+                  [
+                    {
+                      text: "Cancel",
+                      style: "cancel"
                     },
-                    style: "destructive"
-                  }
-                ]
-              )
-            }}
-            style={styles.clearHistoryButton}
-          >
-            <MaterialCommunityIcons name="delete-outline" size={22} color={theme.TEXT_SECONDARY} />
-          </TouchableOpacity>
+                    { 
+                      text: "Clear", 
+                      onPress: () => {
+                        clearChatHistory();
+                      },
+                      style: "destructive"
+                    }
+                  ]
+                )
+              }}
+              style={[styles.clearHistoryButton, { backgroundColor: theme.SURFACE }]}
+            >
+              <MaterialCommunityIcons name="delete-outline" size={20} color={theme.TEXT_SECONDARY} />
+            </TouchableOpacity>
+          </View>
         </View>
         
         {selectedSurah && (
@@ -810,7 +972,7 @@ const TafseerScreen = ({ route, navigation }) => {
               {selectedSurah.englishName}
             </Text>
             <TouchableOpacity
-              style={[styles.changeSurahButton, { backgroundColor: theme.PRIMARY_LIGHT }]}
+              style={[styles.changeSurahButton, { backgroundColor: theme.PRIMARY_LIGHT, borderColor: theme.PRIMARY }]}
               onPress={() => setShowSurahModal(true)}
             >
               <Text style={[styles.changeSurahButtonText, { color: theme.PRIMARY }]}>Change</Text>
@@ -819,74 +981,59 @@ const TafseerScreen = ({ route, navigation }) => {
         )}
       </View>
       
-      {!selectedSurah && (
-        <View style={styles.optionalSurahPrompt}>
-          <Text style={[styles.promptText, { color: theme.TEXT_SECONDARY }]}>
-            Select a specific Surah or ask any general question about the Quran
-          </Text>
-          <TouchableOpacity
-            style={[styles.selectSurahButton, { backgroundColor: theme.PRIMARY }]}
-            onPress={() => setShowSurahModal(true)}
-          >
-            <Text style={[styles.buttonText, { color: theme.WHITE }]}>Select a Surah</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-      
+      {/* Chat Container with improved keyboard handling */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardAvoidView}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+        style={styles.chatContainer}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
-        <View style={styles.chatContainerWrapper}>
-          <ScrollView
-            ref={scrollViewRef}
-            style={styles.messagesContainer}
-            contentContainerStyle={[
-              styles.messagesContent,
-              {paddingBottom: isKeyboardVisible ? 20 : 20}
-            ]}
-            showsVerticalScrollIndicator={false}
-            keyboardDismissMode="interactive"
-            keyboardShouldPersistTaps="handled"
-            onContentSizeChange={() => {
-              if (isKeyboardVisible) {
-                scrollViewRef.current?.scrollToEnd({ animated: true });
-              }
-            }}
-          >
-            <FlatList
-              data={messages}
-              renderItem={renderMessage}
-              keyExtractor={(item) => item.id}
-              scrollEnabled={false}
-            />
-            
-            {loading && renderLoadingIndicator()}
-          </ScrollView>
-          
-          <Animated.View 
-            style={[
-              styles.inputContainer, 
-              { 
-                backgroundColor: theme.SURFACE, 
-                borderTopColor: theme.BORDER,
-                opacity: inputOpacity,
-                shadowColor: theme.SHADOW,
-                shadowOffset: { width: 0, height: -3 },
-                shadowOpacity: isKeyboardVisible ? 0.1 : 0,
-                shadowRadius: 5,
-                elevation: isKeyboardVisible ? 3 : 0,
-              }
-            ]}
-          >
+        {/* Messages ScrollView */}
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.messagesContainer}
+          contentContainerStyle={[
+            styles.messagesContent,
+            { paddingBottom: 16 } // Just enough for the input bar
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
+          onContentSizeChange={() => {
+            scrollViewRef.current?.scrollToEnd({ animated: true });
+          }}
+        >
+          <FlatList
+            data={messages}
+            renderItem={renderMessage}
+            keyExtractor={(item) => item.id}
+            scrollEnabled={false}
+            contentContainerStyle={styles.flatListContent}
+          />
+          {loading && renderLoadingIndicator()}
+        </ScrollView>
+        {/* Input Container - Normal flex layout at the bottom */}
+        <View style={[
+          styles.inputContainer,
+          {
+            backgroundColor: theme.SURFACE,
+            borderTopColor: theme.BORDER,
+            shadowColor: theme.SHADOW,
+            shadowOffset: { width: 0, height: -2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+            elevation: 5,
+            paddingBottom: isKeyboardVisible ? 12 : Platform.OS === 'ios' ? 50 : 24, // Account for bottom navigation when keyboard is hidden
+          }
+        ]}>
+          <View style={styles.inputWrapper}>
             <TextInput
               ref={inputRef}
               style={[
                 styles.input, 
                 { 
                   color: theme.TEXT_PRIMARY, 
-                  backgroundColor: theme.BACKGROUND 
+                  backgroundColor: theme.BACKGROUND,
+                  borderColor: theme.BORDER
                 }
               ]}
               placeholder={selectedSurah 
@@ -906,7 +1053,7 @@ const TafseerScreen = ({ route, navigation }) => {
               onFocus={() => {
                 setTimeout(() => {
                   scrollViewRef.current?.scrollToEnd({ animated: true });
-                }, 100);
+                }, 300);
               }}
             />
             <TouchableOpacity
@@ -914,7 +1061,7 @@ const TafseerScreen = ({ route, navigation }) => {
                 styles.sendButton, 
                 { 
                   backgroundColor: inputMessage.trim() === '' ? theme.PRIMARY_LIGHT : theme.PRIMARY,
-                  opacity: inputMessage.trim() === '' ? 0.7 : 1
+                  opacity: inputMessage.trim() === '' ? 0.6 : 1
                 }
               ]}
               onPress={() => {
@@ -924,9 +1071,13 @@ const TafseerScreen = ({ route, navigation }) => {
               }}
               disabled={inputMessage.trim() === ''}
             >
-              <MaterialCommunityIcons name="send" size={20} color={theme.WHITE} />
+              <MaterialCommunityIcons 
+                name="send" 
+                size={18} 
+                color={inputMessage.trim() === '' ? theme.PRIMARY : theme.WHITE} 
+              />
             </TouchableOpacity>
-          </Animated.View>
+          </View>
         </View>
       </KeyboardAvoidingView>
       
@@ -937,12 +1088,15 @@ const TafseerScreen = ({ route, navigation }) => {
         transparent={true}
         onRequestClose={() => setShowSurahModal(false)}
       >
-        <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+        <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: theme.BACKGROUND }]}>
-            <View style={styles.modalHeader}>
+            <View style={[styles.modalHeader, { borderBottomColor: theme.BORDER }]}>
               <Text style={[styles.modalTitle, { color: theme.TEXT_PRIMARY }]}>Select a Surah</Text>
-              <TouchableOpacity onPress={() => setShowSurahModal(false)}>
-                <MaterialCommunityIcons name="close" size={24} color={theme.TEXT_PRIMARY} />
+              <TouchableOpacity 
+                onPress={() => setShowSurahModal(false)}
+                style={[styles.modalCloseButton, { backgroundColor: theme.SURFACE }]}
+              >
+                <MaterialCommunityIcons name="close" size={20} color={theme.TEXT_PRIMARY} />
               </TouchableOpacity>
             </View>
             
@@ -974,214 +1128,317 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  centerContent: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  titleText: {
-    fontSize: 32,
-    fontFamily: 'IBMPlexSans_700Bold',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  subtitleText: {
-    fontSize: 16,
-    fontFamily: 'IBMPlexSans_400Regular',
-    textAlign: 'center',
-    marginBottom: 40,
-    lineHeight: 24,
-  },
-  startButton: {
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '80%',
-    maxWidth: 300,
-  },
-  startButtonText: {
-    fontSize: 17,
-    fontFamily: 'IBMPlexSans_700Bold',
-  },
   header: {
-    padding: 16,
-    paddingTop: StatusBar.currentHeight || 40,
-    paddingBottom: 8,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 0 : StatusBar.currentHeight || 0,
+    paddingBottom: 16,
+    borderBottomWidth: 0.5,
   },
   headerTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
   },
   headerSurahInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 8,
   },
   screenTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontFamily: 'IBMPlexSans_700Bold',
   },
   selectedSurahText: {
     fontSize: 16,
-    fontFamily: 'IBMPlexSans_400Regular',
+    fontFamily: 'IBMPlexSans_500Medium',
   },
   changeSurahButton: {
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1,
   },
   changeSurahButtonText: {
     fontSize: 14,
     fontFamily: 'IBMPlexSans_600SemiBold',
   },
-  selectSurahPrompt: {
-    flex: 1,
-    justifyContent: 'center',
+  headerButtons: {
+    flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
+    gap: 8,
   },
-  promptText: {
-    fontSize: 16,
-    fontFamily: 'IBMPlexSans_400Regular',
-    marginBottom: 20,
-    textAlign: 'center',
+  selectSurahHeaderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    justifyContent: 'center',
+    minHeight: 32,
   },
-  selectSurahButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
+  selectSurahHeaderButtonText: {
+    fontSize: 13,
+    fontFamily: 'IBMPlexSans_600SemiBold',
+    marginLeft: 4,
+  },
+  clearHistoryButton: {
+    padding: 8,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  optionalSurahPrompt: {
+    // Remove this section entirely
+    display: 'none',
+  },
+  promptText: {
+    fontSize: 15,
+    fontFamily: 'IBMPlexSans_400Regular',
+    marginBottom: 16,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  selectSurahButton: {
+    // Remove this section entirely  
+    display: 'none',
+  },
+  buttonIcon: {
+    marginRight: 6,
+  },
   buttonText: {
-    fontSize: 16,
-    fontFamily: 'IBMPlexSans_600SemiBold',
+    fontSize: 15,
+    fontFamily: 'IBMPlexSans_500Medium',
+    textAlign: 'center',
+    paddingTop: 1,
   },
-  keyboardAvoidView: {
+  chatContainer: {
     flex: 1,
-    width: '100%',
-  },
-  chatContainerWrapper: {
-    flex: 1,
-    height: '100%',
-    marginBottom: 50,
   },
   messagesContainer: {
     flex: 1,
-    padding: 16,
+    paddingHorizontal: 16,
   },
   messagesContent: {
+    paddingTop: 16,
     flexGrow: 1,
-    paddingBottom: 16,
+  },
+  flatListContent: {
+    paddingBottom: 8,
+  },
+  messageWrapper: {
+    marginBottom: 16,
   },
   messageRow: {
     flexDirection: 'row',
-    marginBottom: 16,
+    marginBottom: 2,
   },
   userMessageContainer: {
-    padding: 12,
-    borderRadius: 16,
-    maxWidth: '80%',
-    borderBottomRightRadius: 4,
+    padding: 16,
+    borderRadius: 20,
+    borderBottomRightRadius: 6,
+    maxWidth: '85%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   aiMessageContainer: {
-    padding: 12,
-    borderRadius: 16,
-    maxWidth: '80%',
-    borderBottomLeftRadius: 4,
+    padding: 16,
+    borderRadius: 20,
+    borderBottomLeftRadius: 6,
+    maxWidth: '85%',
     borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   systemMessageContainer: {
     padding: 12,
     borderRadius: 16,
     maxWidth: '90%',
-    marginLeft: 'auto',
-    marginRight: 'auto',
-    marginVertical: 8,
+    alignSelf: 'center',
+    marginVertical: 4,
   },
   messageText: {
+    fontSize: 16,
+    fontFamily: 'IBMPlexSans_400Regular',
+    lineHeight: 24,
+  },
+  loadingIndicatorContainer: {
+    padding: 16,
+    borderRadius: 20,
+    borderBottomLeftRadius: 6,
+    maxWidth: '50%',
+    borderWidth: 1,
+    alignSelf: 'flex-start',
+  },
+  typingAnimation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  typingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginHorizontal: 3,
+  },
+  messageSuggestionsContainer: {
+    marginTop: 12,
+    paddingHorizontal: 4,
+  },
+  suggestionsPrompt: {
+    fontSize: 15,
+    fontFamily: 'IBMPlexSans_600SemiBold',
+    marginBottom: 12,
+  },
+  messageSuggestionChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  messageSuggestionChip: {
+    padding: 12,
+    borderRadius: 12,
+    width: '48%',
+    marginBottom: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  messageSuggestionText: {
+    fontSize: 13,
+    fontFamily: 'IBMPlexSans_500Medium',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  systemMessage: {
+    padding: 12,
+    borderRadius: 16,
+    maxWidth: '90%',
+    alignSelf: 'center',
+    marginVertical: 8,
+  },
+  systemMessageText: {
+    fontSize: 15,
+    fontFamily: 'IBMPlexSans_400Regular',
+    lineHeight: 22,
+    textAlign: 'center',
+  },
+  ayahMessage: {
+    padding: 20,
+    borderRadius: 16,
+    width: '95%',
+    alignSelf: 'center',
+    marginVertical: 12,
+    borderWidth: 1,
+  },
+  ayahMessageContent: {
+    flexDirection: 'column',
+  },
+  ayahArabicText: {
+    fontSize: 22,
+    fontFamily: 'IBMPlexSans_500Medium',
+    textAlign: 'right',
+    marginBottom: 12,
+    lineHeight: 36,
+  },
+  ayahTranslationText: {
     fontSize: 15,
     fontFamily: 'IBMPlexSans_400Regular',
     lineHeight: 22,
   },
   inputContainer: {
-    flexDirection: 'row',
-    padding: 12,
-    borderTopWidth: 0.5,
-    alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginBottom: Platform.OS === 'ios' ? 0 : 0,
-    zIndex: 10,
+    paddingVertical: 12,
+    borderTopWidth: 0.5,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
   },
   input: {
     flex: 1,
-    padding: 12,
-    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 24,
     fontSize: 16,
     fontFamily: 'IBMPlexSans_400Regular',
-    maxHeight: 80,
-    minHeight: 40,
-    paddingTop: 12,
-    paddingBottom: 5,
-    borderWidth: 0.5,
-    borderColor: 'rgba(0, 0, 0, 0.1)',
+    maxHeight: 100,
+    minHeight: 48,
+    borderWidth: 1,
+    textAlignVertical: 'center',
   },
   sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 1.41,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
   },
   modalOverlay: {
     flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    height: height * 0.7,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 16,
+    height: height * 0.75,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 20,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 0.5,
     marginBottom: 16,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontFamily: 'IBMPlexSans_600SemiBold',
+  },
+  modalCloseButton: {
+    padding: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   surahList: {
     flex: 1,
+    paddingHorizontal: 20,
   },
   surahListContent: {
-    paddingBottom: 30,
+    paddingBottom: 40,
   },
   surahItem: {
     flexDirection: 'row',
     paddingVertical: 16,
-    paddingHorizontal: 8,
-    borderBottomWidth: 1,
+    paddingHorizontal: 4,
+    borderBottomWidth: 0.5,
     alignItems: 'center',
   },
   surahNumberCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 16,
@@ -1196,11 +1453,11 @@ const styles = StyleSheet.create({
   surahNameText: {
     fontSize: 17,
     fontFamily: 'IBMPlexSans_500Medium',
+    marginBottom: 2,
   },
   surahEnglishText: {
     fontSize: 14,
     fontFamily: 'IBMPlexSans_400Regular',
-    marginTop: 2,
   },
   surahAyahCount: {
     fontSize: 12,
@@ -1216,99 +1473,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'IBMPlexSans_400Regular',
   },
-  loadingIndicatorContainer: {
-    padding: 12,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    borderBottomLeftRadius: 4,
-    maxWidth: '50%',
-    borderWidth: 1,
-    marginBottom: 16,
-    alignSelf: 'flex-start',
-  },
-  typingAnimation: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 24,
-  },
-  typingDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    marginHorizontal: 2,
-  },
-  messageSuggestionsContainer: {
-    padding: 16,
-    marginBottom: 10,
-  },
-  suggestionsPrompt: {
-    fontSize: 16,
-    fontFamily: 'IBMPlexSans_600SemiBold',
-    marginBottom: 12,
-  },
-  messageSuggestionChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  messageSuggestionChip: {
-    padding: 12,
-    borderRadius: 8,
-    width: '48%',
-    marginBottom: 10,
-    alignItems: 'center',
-  },
-  messageSuggestionText: {
-    fontSize: 14,
-    fontFamily: 'IBMPlexSans_500Medium',
-    textAlign: 'center',
-  },
-  systemMessage: {
-    padding: 12,
-    borderRadius: 16,
-    maxWidth: '90%',
-    marginLeft: 'auto',
-    marginRight: 'auto',
-    marginVertical: 8,
-  },
-  systemMessageText: {
-    fontSize: 15,
-    fontFamily: 'IBMPlexSans_400Regular',
-    lineHeight: 22,
-  },
-  ayahMessage: {
-    padding: 16,
-    borderRadius: 16,
-    width: '95%',
-    marginLeft: 'auto',
-    marginRight: 'auto',
-    marginVertical: 12,
-    borderWidth: 1,
-  },
-  ayahMessageContent: {
-    flexDirection: 'column',
-  },
-  ayahArabicText: {
-    fontSize: 20,
-    fontFamily: 'IBMPlexSans_500Medium',
-    textAlign: 'right',
-    marginBottom: 12,
-    lineHeight: 32,
-  },
-  ayahTranslationText: {
-    fontSize: 14,
-    fontFamily: 'IBMPlexSans_400Regular',
-    lineHeight: 20,
-  },
-  optionalSurahPrompt: {
-    padding: 16,
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  clearHistoryButton: {
-    padding: 8,
-    borderRadius: 8,
+  absoluteInputContainer: {
+    // removed absolute positioning
+    // now handled by inputContainer
+    display: 'none',
   },
 });
 

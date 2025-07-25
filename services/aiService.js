@@ -53,7 +53,7 @@ const aiService = {
       
       if (!response.ok) {
         console.error(`API error: ${response.status}`);
-        return "I'm sorry, I couldn't generate a response due to an API error. Please try again later.";
+        return "SubhanAllah, there seems to be a technical issue. Please try again in a moment. May ﷲ make this easy for you! 🤲";
       }
       
       const data = await response.json();
@@ -66,10 +66,10 @@ const aiService = {
         return data.candidates[0].content.parts[0].text;
       }
       
-      return "I couldn't generate a response. Please try again.";
+      return "I'm having difficulty understanding right now. Please try rephrasing your question. Barakallahu feeki! 💚";
     } catch (error) {
       console.error('Error calling Gemini API:', error);
-      return "I'm sorry, I encountered an error. Please check your internet connection and try again.";
+      return "SubhanAllah, I'm experiencing some connectivity issues. Please check your internet connection and try again. May ﷲ grant you ease! 🌙";
     }
   },
 

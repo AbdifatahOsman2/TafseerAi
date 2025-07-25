@@ -275,6 +275,7 @@ const AppNavigator = () => {
   const { theme, isDarkMode } = useTheme();
   const { user, isGuest, isLoading } = useUser();
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(null);
+  const [forceUpdate, setForceUpdate] = useState(0);
   const [fontsLoaded] = useFonts({
     IBMPlexSans_100Thin,
     IBMPlexSans_200ExtraLight, 
@@ -285,7 +286,7 @@ const AppNavigator = () => {
     IBMPlexSans_700Bold,
   });
 
-  // Check if user has completed onboarding
+  // Check if user has completed onboarding - modified to run on every render
   useEffect(() => {
     const checkOnboardingStatus = async () => {
       try {
@@ -298,7 +299,13 @@ const AppNavigator = () => {
     };
     
     checkOnboardingStatus();
-  }, []);
+  }, [forceUpdate]);
+  
+  // Add this to trigger checks when Onboarding might complete
+  const handleStateChange = () => {
+    // Force a re-check of onboarding status
+    setForceUpdate(prev => prev + 1);
+  };
 
   // Show loading screen while fonts are loading or user state is being determined
   if (!fontsLoaded || isLoading || hasCompletedOnboarding === null) {
@@ -310,7 +317,7 @@ const AppNavigator = () => {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer onStateChange={handleStateChange}>
       <StatusBar style={isDarkMode ? "light" : "dark"} />
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!hasCompletedOnboarding ? (

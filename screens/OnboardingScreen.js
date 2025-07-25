@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -8,13 +8,15 @@ import {
   Dimensions, 
   FlatList, 
   SafeAreaView,
-  StatusBar
+  StatusBar,
+  Alert
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useUser } from '../context/UserContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFonts, IBMPlexSans_400Regular, IBMPlexSans_500Medium, IBMPlexSans_600SemiBold, IBMPlexSans_700Bold } from '@expo-google-fonts/ibm-plex-sans';
 import { CommonActions } from '@react-navigation/native';
+import * as Updates from 'expo-updates';
 
 const { width, height } = Dimensions.get('window');
 
@@ -70,21 +72,31 @@ const OnboardingScreen = ({ navigation }) => {
       // Set guest mode based on user choice
       await setGuestMode(asGuest);
       
-      navigation.dispatch(
-        CommonActions.reset({
-          index: 0,
-          routes: [{ name: 'Main' }],
-        })
+      // Show confirmation dialog
+      Alert.alert(
+        "Welcome to TafseerAI",
+        asGuest ? "Continuing as guest..." : "Please sign in to access all features",
+        [
+          {
+            text: "Continue",
+            onPress: async () => {
+              try {
+                // Force app reload using Expo Updates
+                await Updates.reloadAsync();
+              } catch (error) {
+                // Fallback if reload fails
+                alert("Please restart the app to complete setup.");
+              }
+            }
+          }
+        ]
       );
     } catch (error) {
       console.error("Error completing onboarding:", error);
-      // Fallback navigation to Main
-      navigation.dispatch(
-        CommonActions.reset({
-          index: 0,
-          routes: [{ name: 'Main' }],
-        })
-      );
+      
+      // Simple fallback
+      await AsyncStorage.setItem('hasCompletedOnboarding', 'true');
+      alert("Setup complete. Please restart the app.");
     }
   };
 
@@ -112,33 +124,33 @@ const OnboardingScreen = ({ navigation }) => {
               resizeMode="contain"
             />
           </View>
-          <Text style={styles.title}>{item.title}</Text>
-          <Text style={styles.description}>{item.description}</Text>
+          <Text style={[styles.title, { color: theme.TEXT_PRIMARY }]}>{item.title}</Text>
+          <Text style={[styles.description, { color: theme.TEXT_SECONDARY }]}>{item.description}</Text>
         </View>
 
         {/* Bottom Section - 30% height */}
         <View style={styles.bottomSection}>
           {index < onboardingData.length - 1 ? (
             <TouchableOpacity 
-              style={[styles.button, styles.buttonPrimary]} 
+              style={[styles.button, styles.buttonPrimary, { backgroundColor: theme.PRIMARY }]} 
               onPress={handleNext}
             >
-              <Text style={styles.buttonTextPrimary}>Next</Text>
+              <Text style={[styles.buttonTextPrimary, { color: theme.WHITE }]}>Next</Text>
             </TouchableOpacity>
           ) : (
             <View style={styles.finalButtons}>
               <TouchableOpacity 
-                style={[styles.button, styles.buttonSecondary]} 
+                style={[styles.button, styles.buttonSecondary, { borderColor: theme.BORDER }]} 
                 onPress={() => completeOnboarding(true)}
               >
-                <Text style={styles.buttonTextSecondary}>Continue as Guest</Text>
+                <Text style={[styles.buttonTextSecondary, { color: theme.TEXT_PRIMARY }]}>Continue as Guest</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.button, styles.buttonPrimary]} 
+                style={[styles.button, styles.buttonPrimary, { backgroundColor: theme.PRIMARY }]} 
                 onPress={() => completeOnboarding(false)}
               >
-                <Text style={styles.buttonTextPrimary}>Sign in</Text>
+                <Text style={[styles.buttonTextPrimary, { color: theme.WHITE }]}>Sign in</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -150,7 +162,7 @@ const OnboardingScreen = ({ navigation }) => {
                 key={idx}
                 style={[
                   styles.paginationDot,
-                  { backgroundColor: idx === currentIndex ? '#ffffff' : 'rgba(255, 255, 255, 0.4)' }
+                  { backgroundColor: idx === currentIndex ? theme.PRIMARY : theme.BORDER }
                 ]}
               />
             ))}
@@ -162,15 +174,15 @@ const OnboardingScreen = ({ navigation }) => {
 
   if (!fontsLoaded) {
     return (
-      <View style={[styles.container, { backgroundColor: '#384766' }]}>
-        <Text style={styles.loadingText}>Loading...</Text>
+      <View style={[styles.container, { backgroundColor: theme.BACKGROUND }]}>
+        <Text style={[styles.loadingText, { color: theme.TEXT_PRIMARY }]}>Loading...</Text>
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: '#384766' }]}>
-      <StatusBar barStyle="light-content" />
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.BACKGROUND }]}>
+      <StatusBar barStyle={theme.DARK ? "light-content" : "dark-content"} />
       <FlatList
         ref={flatListRef}
         data={onboardingData}
@@ -227,14 +239,12 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: 'IBMPlexSans_700Bold',
     fontSize: 24,
-    color: '#FFFFFF',
     textAlign: 'center',
     marginBottom: 16,
   },
   description: {
     fontFamily: 'IBMPlexSans_400Regular',
     fontSize: 17,
-    color: '#FFFFFF',
     textAlign: 'center',
     lineHeight: 24,
     opacity: 0.9,
@@ -258,30 +268,26 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
   buttonPrimary: {
-    backgroundColor: '#FFFFFF',
+    // Remove backgroundColor here since we're setting it dynamically
   },
   buttonSecondary: {
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: '#FFFFFF',
   },
   buttonTextPrimary: {
     fontFamily: 'IBMPlexSans_600SemiBold',
     fontSize: 17,
-    color: '#384766',
   },
   buttonTextSecondary: {
     fontFamily: 'IBMPlexSans_600SemiBold',
     fontSize: 17,
-    color: '#FFFFFF',
   },
   finalButtons: {
     width: '100%',
   },
   loadingText: {
-    color: '#FFFFFF',
     fontSize: 18,
-    fontWeight: '500',
+    fontFamily: 'IBMPlexSans_500Medium',
   }
 });
 
