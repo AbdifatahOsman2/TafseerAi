@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,7 +8,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Dimensions,
-  StatusBar
+  StatusBar,
+  Animated,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
@@ -16,11 +17,35 @@ import { useIsFocused } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
+const HEADER_HEIGHT = 44;
 
 const ExploreScreen = ({ navigation }) => {
   const { theme } = useTheme();
   const [surahs, setSurahs] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const scrollY = useRef(new Animated.Value(0)).current;
+  
+  // Prevent negative scroll values (iOS bounce) from affecting the clamp
+  const clampedScrollY = scrollY.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+    extrapolateLeft: 'clamp',
+  });
+  
+  const clampedScroll = Animated.diffClamp(clampedScrollY, 0, HEADER_HEIGHT);
+
+  const headerTranslateY = clampedScroll.interpolate({
+    inputRange: [0, HEADER_HEIGHT],
+    outputRange: [0, -HEADER_HEIGHT],
+    extrapolate: 'clamp',
+  });
+
+  const headerOpacity = clampedScroll.interpolate({
+    inputRange: [0, HEADER_HEIGHT * 0.8, HEADER_HEIGHT],
+    outputRange: [1, 0.3, 0],
+    extrapolate: 'clamp',
+  });
 
   // Fetch all surahs list on component mount
   useEffect(() => {
@@ -32,10 +57,10 @@ const ExploreScreen = ({ navigation }) => {
     try {
       const response = await fetch('https://api.alquran.cloud/v1/surah');
       const data = await response.json();
-      
+
       if (data.code === 200) {
         setSurahs(data.data);
-        
+
         // Store surahs in AsyncStorage for offline access
         await AsyncStorage.setItem('surahs', JSON.stringify(data.data));
       } else {
@@ -82,10 +107,10 @@ const ExploreScreen = ({ navigation }) => {
         <Text style={[styles.englishName, { color: theme.TEXT_SECONDARY }]}>{item.englishName}</Text>
         <Text style={[styles.ayahCount, { color: theme.TEXT_SECONDARY }]}>{item.numberOfAyahs} Ayahs</Text>
       </View>
-      <MaterialCommunityIcons 
-        name="chevron-right" 
-        size={24} 
-        color={theme.PRIMARY} 
+      <MaterialCommunityIcons
+        name="chevron-right"
+        size={24}
+        color={theme.PRIMARY}
       />
     </TouchableOpacity>
   );
@@ -102,16 +127,34 @@ const ExploreScreen = ({ navigation }) => {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.BACKGROUND }]}>
       <StatusBar barStyle={theme.DARK ? "light-content" : "dark-content"} />
-      
-      <Text style={[styles.screenTitle, { color: theme.TEXT_PRIMARY }]}>Explore Quran</Text>
 
-      <FlatList
-        data={surahs}
-        renderItem={renderSurahCard}
-        keyExtractor={(item) => item.number.toString()}
-        contentContainerStyle={[styles.surahList, { paddingBottom: 80 }]}
-        showsVerticalScrollIndicator={false}
-      />
+      <View style={{ flex: 1 }}>
+        <Animated.View
+          style={[
+            styles.headerContainer,
+            {
+              backgroundColor: theme.BACKGROUND,
+              transform: [{ translateY: headerTranslateY }],
+              opacity: headerOpacity,
+            },
+          ]}
+        >
+          <Text style={[styles.screenTitle, { color: theme.TEXT_PRIMARY }]}>Explore Quran</Text>
+        </Animated.View>
+
+        <Animated.FlatList
+          data={surahs}
+          renderItem={renderSurahCard}
+          keyExtractor={(item) => item.number.toString()}
+          contentContainerStyle={[styles.surahList, { paddingTop: HEADER_HEIGHT + 4, paddingBottom: 80 }]}
+          showsVerticalScrollIndicator={false}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+            { useNativeDriver: true }
+          )}
+          scrollEventThrottle={16}
+        />
+      </View>
     </SafeAreaView>
   );
 };
@@ -131,12 +174,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'IBMPlexSans_400Regular',
   },
+  headerContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: HEADER_HEIGHT,
+    zIndex: 10,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
   screenTitle: {
-    fontSize: 24,
+    fontSize: 18,
     fontFamily: 'IBMPlexSans_700Bold',
-    marginTop: StatusBar.currentHeight || 40,
-    marginHorizontal: 20,
-    marginBottom: 15,
   },
   contentContainer: {
     flex: 1,

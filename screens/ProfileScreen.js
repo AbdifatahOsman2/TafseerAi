@@ -4,83 +4,14 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useReciter } from '../context/ReciterContext';
 import { useUser } from '../context/UserContext';
-import { getAuth, deleteUser } from 'firebase/auth';
 import { useFonts, IBMPlexSans_400Regular, IBMPlexSans_500Medium, IBMPlexSans_700Bold } from '@expo-google-fonts/ibm-plex-sans';
 
 const ProfileScreen = ({ navigation }) => {
   const { theme, isDarkMode, toggleTheme } = useTheme();
   const { selectedReciter } = useReciter();
   const { user, isGuest, logout, setGuestMode } = useUser();
-  const auth = getAuth();
 
   const PRIVACY_POLICY_URL = 'https://www.termsfeed.com/live/aa077d46-786f-4681-8390-b2e2ccf3a939';
-
-  const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        },
-        {
-          text: 'Logout',
-          onPress: async () => {
-            await logout();
-            // No need to navigate as the AppNavigator will handle it
-          }
-        }
-      ]
-    );
-  };
-
-  const handleSignIn = async () => {
-    // Disable guest mode with the updated function
-    await setGuestMode(false);
-    
-    // Reset navigation to the root navigator which will show the Auth flow
-    // because we just set isGuest to false
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Auth' }],
-    });
-  };
-
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      'Delete Account',
-      'Are you sure you want to delete your account? This action cannot be undone.',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const currentUser = auth.currentUser;
-              
-              if (currentUser) {
-                await deleteUser(currentUser);
-                // Log out the user after account deletion
-                handleLogout();
-                Alert.alert('Success', 'Your account has been deleted successfully.');
-              } else {
-                Alert.alert('Error', 'No user is currently signed in.');
-              }
-            } catch (error) {
-              console.error('Error deleting account:', error);
-              Alert.alert('Error', `Failed to delete account: ${error.message}`);
-            }
-          },
-        },
-      ],
-      { cancelable: true }
-    );
-  };
 
   const openPrivacyPolicy = async () => {
     try {
@@ -208,40 +139,7 @@ const ProfileScreen = ({ navigation }) => {
               </View>
               <MaterialCommunityIcons name="chevron-right" size={24} color={theme.TEXT_SECONDARY} />
             </TouchableOpacity>
-
-            {!isGuest && (
-              <TouchableOpacity 
-                style={styles.settingItem}
-                onPress={handleDeleteAccount}
-              >
-                <View style={styles.settingInfo}>
-                  <MaterialCommunityIcons name="account-remove" size={24} color={theme.ERROR_LIGHT || '#ff6b6b'} />
-                  <Text style={[styles.settingText, { color: theme.ERROR_LIGHT || '#ff6b6b' }]}>Delete Account</Text>
-                </View>
-                <MaterialCommunityIcons name="chevron-right" size={24} color={theme.ERROR_LIGHT || '#ff6b6b'} />
-              </TouchableOpacity>
-            )}
           </View>
-
-          {isGuest ? (
-            <TouchableOpacity 
-              style={[styles.actionButton, { backgroundColor: theme.PRIMARY }]}
-              onPress={handleSignIn}
-            >
-              <MaterialCommunityIcons name="login" size={20} color={theme.WHITE} />
-              <Text style={[styles.actionButtonText, { color: theme.WHITE }]}>Sign In</Text>
-            </TouchableOpacity>
-          ) : (
-            <>
-              <TouchableOpacity 
-                style={[styles.logoutButton, { backgroundColor: theme.SURFACE, borderColor: theme.BORDER }]}
-                onPress={handleLogout}
-              >
-                <MaterialCommunityIcons name="logout" size={20} color={theme.TEXT_SECONDARY} />
-                <Text style={[styles.logoutText, { color: theme.TEXT_SECONDARY }]}>Log Out</Text>
-              </TouchableOpacity>
-            </>
-          )}
         </View>
       </ScrollView>
     </SafeAreaView>

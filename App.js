@@ -21,9 +21,6 @@ import SurahDetailScreen from './screens/SurahDetailScreen';
 import TafseerDetailScreen from './screens/TafseerDetailScreen';
 import ReciterSettingsScreen from './screens/ReciterSettingsScreen';
 import BookmarksScreen from './screens/BookmarksScreen';
-import LoginScreen from './screens/LoginScreen';
-import RegisterScreen from './screens/RegisterScreen';
-import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 
 // Import Theme Provider
@@ -39,19 +36,7 @@ aiService.saveApiKey();
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
-const AuthStack = createStackNavigator();
 const { width } = Dimensions.get('window');
-
-// Auth Navigator
-const AuthNavigator = () => {
-  return (
-    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
-      <AuthStack.Screen name="Login" component={LoginScreen} />
-      <AuthStack.Screen name="Register" component={RegisterScreen} />
-      <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-    </AuthStack.Navigator>
-  );
-};
 
 // Create tab screens with stack navigation
 const ExploreStack = () => {
@@ -90,7 +75,7 @@ const ProfileStack = () => {
 // Main tab navigator
 const TabNavigator = () => {
   const { theme, isDarkMode } = useTheme();
-  
+
   // Define the default tab bar style to reuse everywhere
   const defaultTabBarStyle = {
     backgroundColor: theme.SURFACE,
@@ -117,50 +102,50 @@ const TabNavigator = () => {
         headerShown: false,
         tabBarIcon: ({ focused, color, size }) => {
           let icon;
-          
+
           // More modern icon selection with custom rendering
           if (route.name === 'Home') {
             icon = (
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons 
-                  name={focused ? 'home' : 'home-outline'} 
-                  size={30} 
-                  color={color} 
+                <MaterialCommunityIcons
+                  name={focused ? 'home' : 'home-outline'}
+                  size={30}
+                  color={color}
                 />
               </View>
             );
           } else if (route.name === 'Explore') {
             icon = (
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons 
-                  name={focused ? 'compass' : 'compass-outline'} 
-                  size={30} 
-                  color={color} 
+                <MaterialCommunityIcons
+                  name={focused ? 'compass' : 'compass-outline'}
+                  size={30}
+                  color={color}
                 />
               </View>
             );
           } else if (route.name === 'Tafseer') {
             icon = (
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons 
-                  name={focused ? 'book-open-variant' : 'book-open-outline'} 
-                  size={30} 
-                  color={color} 
+                <MaterialCommunityIcons
+                  name={focused ? 'book-open-variant' : 'book-open-outline'}
+                  size={30}
+                  color={color}
                 />
               </View>
             );
           } else if (route.name === 'Profile') {
             icon = (
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons 
-                  name={focused ? 'account' : 'account-outline'} 
-                  size={30} 
-                  color={color} 
+                <MaterialCommunityIcons
+                  name={focused ? 'account' : 'account-outline'}
+                  size={30}
+                  color={color}
                 />
               </View>
             );
           }
-          
+
           return icon;
         },
         tabBarActiveTintColor: theme.PRIMARY,
@@ -179,18 +164,18 @@ const TabNavigator = () => {
         },
       })}
     >
-      <Tab.Screen 
-        name="Home" 
+      <Tab.Screen
+        name="Home"
         component={HomeStack}
         options={({ route }) => {
           // Get the active route name in the HomeStack
           const routeName = getFocusedRouteNameFromRoute(route) ?? 'HomeMain';
-          
+
           return {
             tabBarLabel: ({ focused, color }) => (
               <Text style={[
-                styles.tabBarLabel, 
-                { 
+                styles.tabBarLabel,
+                {
                   color: focused ? theme.PRIMARY : theme.TEXT_SECONDARY,
                   fontFamily: focused ? 'IBMPlexSans_600SemiBold' : 'IBMPlexSans_400Regular'
                 }
@@ -206,18 +191,18 @@ const TabNavigator = () => {
           };
         }}
       />
-      <Tab.Screen 
-        name="Explore" 
+      <Tab.Screen
+        name="Explore"
         component={ExploreStack}
         options={({ route }) => {
           // Get the active route name in the ExploreStack
           const routeName = getFocusedRouteNameFromRoute(route) ?? 'ExploreMain';
-          
+
           return {
             tabBarLabel: ({ focused, color }) => (
               <Text style={[
-                styles.tabBarLabel, 
-                { 
+                styles.tabBarLabel,
+                {
                   color: focused ? theme.PRIMARY : theme.TEXT_SECONDARY,
                   fontFamily: focused ? 'IBMPlexSans_600SemiBold' : 'IBMPlexSans_400Regular'
                 }
@@ -233,14 +218,14 @@ const TabNavigator = () => {
           };
         }}
       />
-      <Tab.Screen 
-        name="Tafseer" 
+      <Tab.Screen
+        name="Tafseer"
         component={TafseerScreen}
         options={{
           tabBarLabel: ({ focused, color }) => (
             <Text style={[
-              styles.tabBarLabel, 
-              { 
+              styles.tabBarLabel,
+              {
                 color: focused ? theme.PRIMARY : theme.TEXT_SECONDARY,
                 fontFamily: focused ? 'IBMPlexSans_600SemiBold' : 'IBMPlexSans_400Regular'
               }
@@ -250,14 +235,14 @@ const TabNavigator = () => {
           )
         }}
       />
-      <Tab.Screen 
-        name="Profile" 
+      <Tab.Screen
+        name="Profile"
         component={ProfileStack}
         options={{
           tabBarLabel: ({ focused, color }) => (
             <Text style={[
-              styles.tabBarLabel, 
-              { 
+              styles.tabBarLabel,
+              {
                 color: focused ? theme.PRIMARY : theme.TEXT_SECONDARY,
                 fontFamily: focused ? 'IBMPlexSans_600SemiBold' : 'IBMPlexSans_400Regular'
               }
@@ -278,7 +263,7 @@ const AppNavigator = () => {
   const [forceUpdate, setForceUpdate] = useState(0);
   const [fontsLoaded] = useFonts({
     IBMPlexSans_100Thin,
-    IBMPlexSans_200ExtraLight, 
+    IBMPlexSans_200ExtraLight,
     IBMPlexSans_300Light,
     IBMPlexSans_400Regular,
     IBMPlexSans_500Medium,
@@ -297,10 +282,10 @@ const AppNavigator = () => {
         setHasCompletedOnboarding(false);
       }
     };
-    
+
     checkOnboardingStatus();
   }, [forceUpdate]);
-  
+
   // Add this to trigger checks when Onboarding might complete
   const handleStateChange = () => {
     // Force a re-check of onboarding status
@@ -328,13 +313,7 @@ const AppNavigator = () => {
           <Stack.Screen name="Main">
             {() => (
               <Stack.Navigator screenOptions={{ headerShown: false }}>
-                {!isGuest && !user ? (
-                  // Auth screens when not logged in and not in guest mode
-                  <Stack.Screen name="Auth" component={AuthNavigator} />
-                ) : (
-                  // Main app screens when logged in or in guest mode
-                  <Stack.Screen name="MainApp" component={TabNavigator} />
-                )}
+                <Stack.Screen name="MainApp" component={TabNavigator} />
               </Stack.Navigator>
             )}
           </Stack.Screen>

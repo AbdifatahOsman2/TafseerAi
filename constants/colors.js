@@ -1,17 +1,17 @@
 // Light Theme Colors
 export const COLORS = {
-  PRIMARY: '#809BCE',              // Soft Indigo - Buttons, links, highlights
-  LIGHT_PRIMARY: '#A0BEEE',        // Powder Blue - Hover states, soft accents
-  BACKGROUND: '#F8F9FA',           // Mist White - Main page background
-  SURFACE: '#ECEFF4',              // Light Gray - Card backgrounds, input fields
-  TEXT_PRIMARY: '#2E2E2E',         // Charcoal Gray - Main text
-  TEXT_SECONDARY: '#666C75',       // Slate Gray - Subtext, labels, descriptions
-  BORDER: '#D8E2F8',               // Cloud Blue - Card borders, dividers
-  SHADOW: 'rgba(0, 0, 0, 0.08)',   // Light Shadow - Card shadows, elevated elements
+  PRIMARY: '#6C8EAD',              // Calm Dusty Blue - very easy on the eyes
+  LIGHT_PRIMARY: '#B0C4D6',        // Soft faded blue - secondary accents
+  BACKGROUND: '#F6F3ED',           // Breathable linen beige - soft and calming
+  SURFACE: '#FDFCF9',              // Crisp warm cream - provides a clean, clear contrast for nav and cards
+  TEXT_PRIMARY: '#2C363F',         // Dark slate - excellent legibility without the harshness of black
+  TEXT_SECONDARY: '#8A8F93',       // Muted warm gray
+  BORDER: '#EAE5DC',               // Extremely subtle warm border
+  SHADOW: 'rgba(74, 69, 63, 0.06)',// Whisper-soft shadow to prevent muddying the UI
   
   // Additional utility colors
-  WHITE: '#FAFAFA',                // Soft off-white - easier on the eyes than pure white
-  DISABLED: '#CCCCCC',             // Disabled state
+  WHITE: '#FFFFFF',                // Clean white
+  DISABLED: '#D2CEC8',             // Soft disabled state
 };
 
 // Dark Theme Colors

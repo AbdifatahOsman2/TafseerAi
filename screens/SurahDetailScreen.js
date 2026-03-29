@@ -27,6 +27,7 @@ import * as bookmarkService from '../services/bookmarkService';
 import { useUser } from '../context/UserContext';
 
 const { width, height } = Dimensions.get('window');
+const HEADER_HEIGHT = 44;
 
 const SurahDetailScreen = ({ route, navigation }) => {
   const { theme } = useTheme();
@@ -52,9 +53,34 @@ const SurahDetailScreen = ({ route, navigation }) => {
   // Flag to track if we need to scroll to an ayah after content loads
   const [shouldScrollToAyah, setShouldScrollToAyah] = useState(scrollToAyah ? true : false);
   const [isTafseerLoading, setIsTafseerLoading] = useState(false);
+  const [isScrolling, setIsScrolling] = useState(false);
   
   // Bookmark tracking state
   const [bookmarkedAyahs, setBookmarkedAyahs] = useState(new Set());
+
+  // Scroll-driven header animation
+  const scrollY = useRef(new Animated.Value(0)).current;
+  
+  // Prevent negative scroll values (iOS bounce) from affecting the clamp
+  const clampedScrollY = scrollY.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+    extrapolateLeft: 'clamp',
+  });
+  
+  const clampedScroll = Animated.diffClamp(clampedScrollY, 0, HEADER_HEIGHT);
+
+  const headerTranslateY = clampedScroll.interpolate({
+    inputRange: [0, HEADER_HEIGHT],
+    outputRange: [0, -HEADER_HEIGHT],
+    extrapolate: 'clamp',
+  });
+
+  const headerOpacity = clampedScroll.interpolate({
+    inputRange: [0, HEADER_HEIGHT * 0.8, HEADER_HEIGHT],
+    outputRange: [1, 0.3, 0],
+    extrapolate: 'clamp',
+  });
 
   // Modal animation states
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -1096,136 +1122,164 @@ const SurahDetailScreen = ({ route, navigation }) => {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.BACKGROUND }]}>
       <StatusBar barStyle={theme.DARK ? "light-content" : "dark-content"} />
       
-      <View style={styles.compactHeader}>
-        <TouchableOpacity 
-          style={styles.backButton} 
-          onPress={() => navigation.goBack()}
+      <View style={{ flex: 1 }}>
+        <Animated.View
+          style={[
+            styles.compactHeader,
+            {
+              backgroundColor: theme.BACKGROUND,
+              transform: [{ translateY: headerTranslateY }],
+              opacity: headerOpacity,
+            },
+          ]}
         >
-          <MaterialCommunityIcons 
-            name="arrow-left" 
-            size={24} 
-            color={theme.TEXT_PRIMARY} 
-          />
-        </TouchableOpacity>
-        <View style={styles.titleContainer}>
-          <Text style={[styles.headerTitle, { color: theme.TEXT_PRIMARY }]}>
-            {surahContent.name}
-          </Text>
-          <Text style={[styles.headerSubtitle, { color: theme.TEXT_SECONDARY }]}>
-            {surahContent.englishName}
-          </Text>
-          <Text style={[styles.reciterName, { color: theme.TEXT_TERTIARY }]}>
-            Reciter: {selectedReciter?.name?.split(' ')[0] || 'Alafasy'}
-          </Text>
-        </View>
-        <TouchableOpacity 
-          style={styles.playButton}
-          onPress={() => isSurahPlaying ? stopSurahAudio() : playSurahAudio()}
-          disabled={isSurahLoading}
-        >
-          {isSurahLoading ? (
-            <ActivityIndicator size="small" color={theme.PRIMARY} />
-          ) : (
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={() => navigation.goBack()}
+          >
             <MaterialCommunityIcons 
-              name={isSurahPlaying ? "pause-circle" : "play-circle"} 
-              size={28} 
-              color={theme.PRIMARY} 
+              name="arrow-left" 
+              size={22} 
+              color={theme.TEXT_PRIMARY} 
             />
-          )}
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView 
-        ref={scrollViewRef}
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.surahInfo}>
-          <Text style={[styles.surahInfoText, { color: theme.TEXT_SECONDARY }]}>
-            {surahContent.englishNameTranslation} • {surahContent.revelationType} • {surahContent.numberOfAyahs} Ayahs
-          </Text>
-        </View>
-        
-        <View style={[styles.divider, { backgroundColor: theme.BORDER }]} />
-        
-        {/* Bismillah header for all surahs except Surah 1 (Al-Fatiha) and Surah 9 (At-Tawbah) */}
-        {showBismillah && (
-          <View style={styles.bismillahContainer}>
-            <Text style={[styles.bismillahText, { color: theme.TEXT_PRIMARY }]}>
-              {BISMILLAH}
+          </TouchableOpacity>
+          <View style={[styles.titleContainer, { marginRight: 28 }]}>
+            <Text style={[styles.headerTitle, { color: theme.TEXT_PRIMARY }]} numberOfLines={1}>
+              {surahContent.name}
+            </Text>
+            <Text style={[styles.headerSubtitle, { color: theme.TEXT_SECONDARY }]} numberOfLines={1}>
+              {surahContent.englishName}
             </Text>
           </View>
-        )}
-        
-        {surahContent.ayahs.map((ayah) => {
-          // Find matching translation by numberInSurah
-          const translation = translations?.ayahs.find(t => t.numberInSurah === ayah.numberInSurah);
-          const isSelected = selectedAyah && selectedAyah.number === ayah.number;
-          const isTargetAyah = parseInt(scrollToAyah, 10) === ayah.numberInSurah;
-          const isCurrentlyPlaying = isSurahPlaying && currentAyahPlaying === ayah.numberInSurah - 1;
+        </Animated.View>
+
+        <Animated.ScrollView 
+          ref={scrollViewRef}
+          style={styles.scrollView}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: HEADER_HEIGHT + 4 }]}
+          showsVerticalScrollIndicator={false}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+            { useNativeDriver: true }
+          )}
+          onScrollBeginDrag={() => setIsScrolling(true)}
+          onScrollEndDrag={() => setIsScrolling(false)}
+          onMomentumScrollBegin={() => setIsScrolling(true)}
+          onMomentumScrollEnd={() => setIsScrolling(false)}
+          scrollEventThrottle={16}
+        >
+          <View style={styles.surahInfo}>
+            <Text style={[styles.surahInfoText, { color: theme.TEXT_SECONDARY }]}>
+              {surahContent.englishNameTranslation} • {surahContent.revelationType} • {surahContent.numberOfAyahs} Ayahs
+            </Text>
+          </View>
           
-          return (
-            <View 
-              key={ayah.number} 
-              style={[
-                styles.ayahContainer,
-                isTargetAyah && styles.targetAyahContainer
-              ]}
-              onLayout={(event) => {
-                // Store the y-position of this ayah
-                measureAyahPosition(ayah.numberInSurah, event.nativeEvent.layout.y);
-              }}
-            >
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => handlePress(ayah)}
-              >
-                <View 
-                  style={[
-                    styles.ayahItem, 
-                    {
-                      backgroundColor: theme.SURFACE,
-                      borderColor: isCurrentlyPlaying 
-                        ? theme.PRIMARY 
-                        : isTargetAyah 
-                          ? theme.PRIMARY
-                          : theme.BORDER,
-                      shadowColor: theme.SHADOW,
-                      elevation: isSelected || isTargetAyah || isCurrentlyPlaying ? 8 : 2,
-                      transform: isSelected || isTargetAyah || isCurrentlyPlaying ? [{ scale: 1.03 }] : [{ scale: 1 }],
-                      borderWidth: isCurrentlyPlaying ? 2 : isTargetAyah ? 2 : 1,
-                    }
-                  ]}
-                >
-                  <View style={[
-                    styles.ayahNumberContainer, 
-                    { 
-                      backgroundColor: isCurrentlyPlaying 
-                        ? theme.PRIMARY 
-                        : isTargetAyah 
-                          ? theme.PRIMARY_LIGHT
-                          : theme.PRIMARY,
-                      borderColor: isTargetAyah ? theme.PRIMARY : 'transparent',
-                      borderWidth: isTargetAyah ? 2 : 0,
-                    }
-                  ]}>
-                    <Text style={[styles.ayahNumber, { color: theme.WHITE }]}>{ayah.numberInSurah}</Text>
-                  </View>
-                  <View style={styles.ayahTextContainer}>
-                    <Text style={[styles.ayahText, { color: theme.TEXT_PRIMARY }]}>{ayah.text}</Text>
-                    {translation && (
-                      <Text style={[styles.translationText, { color: theme.TEXT_SECONDARY }]}>
-                        {translation.text}
-                      </Text>
-                    )}
-                  </View>
-                </View>
-              </TouchableOpacity>
+          <View style={[styles.divider, { backgroundColor: theme.BORDER }]} />
+          
+          {/* Bismillah header for all surahs except Surah 1 (Al-Fatiha) and Surah 9 (At-Tawbah) */}
+          {showBismillah && (
+            <View style={styles.bismillahContainer}>
+              <Text style={[styles.bismillahText, { color: theme.TEXT_PRIMARY }]}>
+                {BISMILLAH}
+              </Text>
             </View>
-          );
-        })}
-      </ScrollView>
+          )}
+          
+          {surahContent.ayahs.map((ayah) => {
+            // Find matching translation by numberInSurah
+            const translation = translations?.ayahs.find(t => t.numberInSurah === ayah.numberInSurah);
+            const isSelected = selectedAyah && selectedAyah.number === ayah.number;
+            const isTargetAyah = parseInt(scrollToAyah, 10) === ayah.numberInSurah;
+            const isCurrentlyPlaying = isSurahPlaying && currentAyahPlaying === ayah.numberInSurah - 1;
+            
+            return (
+              <View 
+                key={ayah.number} 
+                style={[
+                  styles.ayahContainer,
+                  isTargetAyah && styles.targetAyahContainer
+                ]}
+                onLayout={(event) => {
+                  // Store the y-position of this ayah
+                  measureAyahPosition(ayah.numberInSurah, event.nativeEvent.layout.y);
+                }}
+              >
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => handlePress(ayah)}
+                >
+                  <View 
+                    style={[
+                      styles.ayahItem, 
+                      {
+                        backgroundColor: theme.SURFACE,
+                        borderColor: isCurrentlyPlaying 
+                          ? theme.PRIMARY 
+                          : isTargetAyah 
+                            ? theme.PRIMARY
+                            : theme.BORDER,
+                        shadowColor: theme.SHADOW,
+                        elevation: isSelected || isTargetAyah || isCurrentlyPlaying ? 8 : 2,
+                        transform: isSelected || isTargetAyah || isCurrentlyPlaying ? [{ scale: 1.03 }] : [{ scale: 1 }],
+                        borderWidth: isCurrentlyPlaying ? 2 : isTargetAyah ? 2 : 1,
+                      }
+                    ]}
+                  >
+                    <View style={[
+                      styles.ayahNumberContainer, 
+                      { 
+                        backgroundColor: isCurrentlyPlaying 
+                          ? theme.PRIMARY 
+                          : isTargetAyah 
+                            ? theme.PRIMARY_LIGHT
+                            : theme.PRIMARY,
+                        borderColor: isTargetAyah ? theme.PRIMARY : 'transparent',
+                        borderWidth: isTargetAyah ? 2 : 0,
+                      }
+                    ]}>
+                      <Text style={[styles.ayahNumber, { color: theme.WHITE }]}>{ayah.numberInSurah}</Text>
+                    </View>
+                    <View style={styles.ayahTextContainer}>
+                      <Text style={[styles.ayahText, { color: theme.TEXT_PRIMARY }]}>{ayah.text}</Text>
+                      {translation && (
+                        <Text style={[styles.translationText, { color: theme.TEXT_SECONDARY }]}>
+                          {translation.text}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+        </Animated.ScrollView>
+      </View>
+
+      {/* Floating Play Button */}
+      <TouchableOpacity 
+        style={[
+          styles.floatingPlayButton, 
+          { 
+            backgroundColor: theme.PRIMARY,
+            shadowColor: theme.SHADOW,
+            opacity: (isScrolling || isSurahPlaying) ? 0.5 : 1,
+            transform: [{ scale: (isScrolling || isSurahPlaying) ? 0.9 : 1 }]
+          }
+        ]}
+        onPress={() => isSurahPlaying ? stopSurahAudio() : playSurahAudio()}
+        disabled={isSurahLoading}
+        activeOpacity={0.8}
+      >
+        {isSurahLoading ? (
+          <ActivityIndicator size="small" color={theme.WHITE} />
+        ) : (
+          <MaterialCommunityIcons 
+            name={isSurahPlaying ? "pause" : "play"} 
+            size={24} 
+            color={theme.WHITE} 
+          />
+        )}
+      </TouchableOpacity>
 
       {/* Bottom Action Sheet Modal */}
       <Modal
@@ -1434,29 +1488,31 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   compactHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    width: '100%',
-    paddingTop: 10,
-    paddingHorizontal: 12,
-    paddingBottom: 10,
+    height: HEADER_HEIGHT,
+    paddingHorizontal: 10,
     zIndex: 10,
   },
   backButton: {
-    padding: 8,
+    padding: 6,
   },
   titleContainer: {
     flex: 1,
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 16,
     fontFamily: 'IBMPlexSans_700Bold',
   },
   headerSubtitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontFamily: 'IBMPlexSans_400Regular',
-    marginTop: 2,
+    marginTop: 1,
   },
   scrollView: {
     width: '100%',
@@ -1609,17 +1665,27 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: 5,
   },
-  playButton: {
-    padding: 8,
-    width: 44,
-    height: 44,
+  floatingPlayButton: {
+    position: 'absolute',
+    bottom: 70,
+    right: 20,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 6,
+    zIndex: 100,
   },
-  reciterName: {
-    fontSize: 11,
-    fontFamily: 'IBMPlexSans_400Regular',
-    marginTop: 2,
+  playButton: {
+    padding: 6,
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   tafseerContainer: {
     marginTop: 20,

@@ -1131,23 +1131,23 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 0 : StatusBar.currentHeight || 0,
-    paddingBottom: 16,
+    paddingBottom: 8,
     borderBottomWidth: 0.5,
   },
   headerTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   headerSurahInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 4,
   },
   screenTitle: {
-    fontSize: 28,
+    fontSize: 18,
     fontFamily: 'IBMPlexSans_700Bold',
   },
   selectedSurahText: {

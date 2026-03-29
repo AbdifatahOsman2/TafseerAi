@@ -1,6 +1,6 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp, getApps } from "firebase/app";
-import { initializeAuth, getReactNativePersistence } from "firebase/auth";
+import { initializeAuth, getAuth, getReactNativePersistence } from "firebase/auth";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FIREBASE_API_KEY } from '@env';
 // TODO: Add SDKs for Firebase products that you want to use
@@ -36,7 +36,8 @@ if (getApps().length === 0) {
 } else {
   // Use existing app if already initialized
   app = getApps()[0];
-  // Auth should already be initialized with the app
+  // Retrieve the already-initialized auth instance
+  auth = getAuth(app);
 }
 
 export { app, auth }; 

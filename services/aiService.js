@@ -30,7 +30,7 @@ const aiService = {
       // Get the API key
       let apiKey = await this.getApiKey();
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -52,7 +52,8 @@ const aiService = {
       });
       
       if (!response.ok) {
-        console.error(`API error: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`API error: ${response.status}`, errorText);
         return "SubhanAllah, there seems to be a technical issue. Please try again in a moment. May ﷲ make this easy for you! 🤲";
       }
       
@@ -78,22 +79,19 @@ const aiService = {
    */
   async getApiKey() {
     try {
-      // First try to get from AsyncStorage
+      // ALWAYS prioritize env var if available, over storage
+      if (GEMINI_API_KEY && GEMINI_API_KEY !== 'undefined') {
+        return GEMINI_API_KEY;
+      }
+      
+      // Try to get from AsyncStorage as fallback
       const storedKey = await AsyncStorage.getItem('GEMINI_API_KEY');
       if (storedKey) {
         return storedKey;
       }
       
-      // If not in storage, use env var if available
-      if (GEMINI_API_KEY) {
-        // Save it for future use
-        await AsyncStorage.setItem('GEMINI_API_KEY', GEMINI_API_KEY);
-        return GEMINI_API_KEY;
-      }
-      
       // Last resort: construct from parts
       const constructedKey = keyParts.join('');
-      await AsyncStorage.setItem('GEMINI_API_KEY', constructedKey);
       return constructedKey;
     } catch (error) {
       // If all else fails, return the constructed key directly
