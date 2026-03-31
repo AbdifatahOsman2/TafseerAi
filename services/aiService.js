@@ -1,21 +1,6 @@
 import { GEMINI_API_KEY } from '@env';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Obfuscate the API key by splitting it into parts
-// This isn't perfect security, but makes it harder to extract the key
-const keyParts = [
-  "AIza",
-  "SyBw",
-  "SyxK",
-  "E_Hl",
-  "qjo4",
-  "wJf7",
-  "6Pkh",
-  "Oa-X",
-  "T_Kt",
-  "TLk"
-];
-
 /**
  * Service to handle AI API calls
  */
@@ -75,7 +60,7 @@ const aiService = {
   },
 
   /**
-   * Get the API key, first from storage then fallback to constructed key
+   * Get the API key, first from env then fallback to storage
    */
   async getApiKey() {
     try {
@@ -86,16 +71,9 @@ const aiService = {
       
       // Try to get from AsyncStorage as fallback
       const storedKey = await AsyncStorage.getItem('GEMINI_API_KEY');
-      if (storedKey) {
-        return storedKey;
-      }
-      
-      // Last resort: construct from parts
-      const constructedKey = keyParts.join('');
-      return constructedKey;
+      return storedKey || "";
     } catch (error) {
-      // If all else fails, return the constructed key directly
-      return keyParts.join('');
+      return "";
     }
   },
 
@@ -117,10 +95,7 @@ const aiService = {
         return true;
       }
       
-      // Use constructed key as fallback
-      const constructedKey = keyParts.join('');
-      await AsyncStorage.setItem('GEMINI_API_KEY', constructedKey);
-      return true;
+      return false;
     } catch (error) {
       console.error('Error saving API key:', error);
       return false;

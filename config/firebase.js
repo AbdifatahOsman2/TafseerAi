@@ -9,7 +9,7 @@ import { FIREBASE_API_KEY } from '@env';
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: FIREBASE_API_KEY || "AIzaSyAYNnB-dsrA_ZcgWMzi1xmcgFXs-XctJGE", // Fallback to hardcoded key if env var fails
+  apiKey: FIREBASE_API_KEY,
   authDomain: "tafseerai.firebaseapp.com",
   projectId: "tafseerai",
   storageBucket: "tafseerai.firebasestorage.app",
